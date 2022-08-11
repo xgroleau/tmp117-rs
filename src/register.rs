@@ -1,6 +1,19 @@
 use modular_bitfield::prelude::*;
 use register_macros::{RERegister, RORegister, RWRegister};
 
+/// Trait of a register, can be read and has an address
+pub trait Register {
+    /// The address of the register
+    const ADDRESS: Address;
+}
+
+/// Trait of a register, can be read and edit.
+/// Editing a register allows to safely modify only a subset of values
+pub trait EditableRegister: Register {}
+
+/// Trait a writable register, like a register but can be written to
+pub trait WritableRegister: EditableRegister {}
+
 /// Temperature register. The value is in 1/7.8125 m°C.
 /// Following a reset, the temperature register reads –256 °C until the first conversion,
 /// including averaging, is complete.
@@ -122,7 +135,7 @@ pub enum ConversionMode {
     OneShot = 3,
 }
 
-/// Configuration register
+/// Configuration register of the tpm117
 #[bitfield]
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -132,29 +145,29 @@ pub struct Configuration {
     __: B1,
 
     /// Software reset. When enabled, cause a reset with a duration of 2ms. The bit will always read back 0
-    reset: bool,
+    pub reset: bool,
 
     /// Data ready or Alert pin select bit.
-    dr_alert: AlertPin,
+    pub dr_alert: AlertPin,
 
     /// Alert pin polarity.
-    polarity: Polarity,
+    pub polarity: Polarity,
 
     /// Thermal/alert mode select
-    trigger_mode: TriggerMode,
+    pub trigger_mode: TriggerMode,
 
     /// Average used for the conversion
-    average: Average,
+    pub average: Average,
 
     /// Conversion cycle
-    conversion: Conversion,
+    pub conversion: Conversion,
 
     /// Conversion mode
-    mode: ConversionMode,
+    pub mode: ConversionMode,
 
     /// EEPROM busy flag, either caused by programming or power-up
     #[skip(setters)]
-    eeprom_busy: bool,
+    pub eeprom_busy: bool,
 
     /// Data ready flag.
     /// This flag indicates that the conversion is complete and the
@@ -164,7 +177,7 @@ pub struct Configuration {
     /// register is updated. Data ready can be monitored on the ALERT
     /// pin by setting bit 2 of the configuration register.
     #[skip(setters)]
-    data_ready: bool,
+    pub data_ready: bool,
 
     /// Alert mode:
     ///   Set when the conversion result is lower than the low limit.
@@ -172,7 +185,7 @@ pub struct Configuration {
     /// Thermal mode:
     ///   Always 0 in [Thermal](TriggerMode::Thermal) mode.
     #[skip(setters)]
-    low_alert: bool,
+    pub low_alert: bool,
 
     /// Alert mode:
     ///   Set when the conversion result is higher than the high limit.
@@ -181,5 +194,93 @@ pub struct Configuration {
     ///   Set when the conversion result is higher than the therm limit
     ///   Cleared when the conversion result is lower than the hysteresis
     #[skip(setters)]
-    high_alert: bool,
+    pub high_alert: bool,
+}
+
+/// The high limit register is a 16-bit, read/write register that stores the high limit for comparison with the temperature result.
+/// One LSB equals 7.8125 m°C. The range of the register is ±256 °C. Negative numbers are represented in binary
+/// two's complement format. Following power-up or a general-call reset, the high-limit register is loaded with the
+/// stored value from the EEPROM. The factory default reset value is 6000h.
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct HighLimit(i16);
+
+/// The low limit register is configured as a 16-bit, read/write register that stores the low limit for comparison with the
+/// temperature result. One LSB equals 7.8125 m°C. The range of the register is ±256 °C. Negative numbers
+/// are represented in binary two's complement format. The data format is the same as the temperature register.
+/// Following power-up or reset, the low-limit register is loaded with the stored value from the EEPROM. The factory
+/// default reset value is 8000h.
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct LowLimit(i16);
+
+/// The eeprom configuration register
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RERegister)]
+pub struct EEPROM {
+    #[skip]
+    __: B14,
+
+    /// EEPROM busy flag, either caused by programming or power-up
+    ///Mirror the `eeprom_busy` in the [Configuration](Configuration) register
+    #[skip(setter)]
+    pub busy: bool,
+
+    /// If the eeprom is unlock. If unlcoked, any writes to the registers program will be written to the eeprom
+    pub unlock: bool,
+}
+
+/// The EEPROM1 register is a 16-bit register that be used as a scratch pad by the customer to store general-
+/// purpose data. This register has a corresponding EEPROM location. Writes to this address when the EEPROM is
+/// locked write data into the register and not to the EEPROM. Writes to this register when the EEPROM is unlocked
+/// causes the corresponding EEPROM location to be programmed.
+/// To support NIST tracebility, do not delete or reprogram the [UEEPROM1](UEEPROM1) register
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct UEEPROM1([u8; 2]);
+
+/// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct UEEPROM2([u8; 2]);
+
+/// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct UEEPROM3([u8; 2]);
+
+/// This 16-bit register is to be used as a user-defined temperature offset register during system calibration. The
+/// offset will be added to the temperature result after linearization. It has a same resolution of 7.8125 m°C and
+/// same range of ±256 °C as the temperature result register. The data format is the same as the temperature
+/// register. If the added result is out of boundary, then the temperature result will show as the maximum or
+/// minimum value
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+pub struct TemperatureOffset(i16);
+
+/// Indicates the device ID
+#[bitfield]
+#[repr(u16)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
+pub struct DeviceID {
+    /// Indicates the device ID
+    device_id: B12,
+
+    /// Indicates the revision number
+    revision: B4,
 }
