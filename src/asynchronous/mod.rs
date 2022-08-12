@@ -22,6 +22,15 @@ pub enum AlertPin<P> {
     /// Currently in alert
     Alert(P),
 }
+impl<P> AlertPin<P> {
+    pub fn borrow_mut(&mut self) -> &mut P {
+        match self {
+            AlertPin::Unkown(p) => p,
+            AlertPin::DataReady(p) => p,
+            AlertPin::Alert(p) => p,
+        }
+    }
+}
 
 /// The TMP117 driver. Note that the alert pin is not used in this driver since it would be blocking,
 /// allowing the user to use interrupts callback.
@@ -244,15 +253,31 @@ where
 
     /// Wait for the data to be ready and read the temperature after
     pub async fn wait_read_temp(&mut self) -> Result<f32, Error<E>> {
-        if let Some(AlertPin::DataReady(_)) = self.alert {
-        } else {
-            self.tmp_ll
-                .edit(|r: Configuration| r.with_dr_alert(AlertPinSelect::DataReady))
-                .await
-                .map_err(Error::Bus)?;
+        if let Some(p) = &mut self.alert {
+            if let AlertPin::DataReady(_) = p {
+            } else {
+                self.tmp_ll
+                    .edit(|r: Configuration| {
+                        r.with_dr_alert(AlertPinSelect::DataReady)
+                            .with_polarity(Polarity::ActiveHigh)
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            p.borrow_mut().wait_for_high().await;
             self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
+            self.read_temp_raw().await
+        } else {
+            loop {
+                match self.read_temp().await {
+                    Ok(v) => return Ok(v),
+                    Err(e) => match e {
+                        Error::DataNotReady => break Err(Error::DataNotReady),
+                        e => return Err(e),
+                    },
+                }
+            }
         }
-        Ok(32.2)
     }
 
     /// Check if an alert was triggered since the last calll
@@ -266,6 +291,31 @@ where
             Ok(Alert::Low)
         } else {
             Ok(Alert::None)
+        }
+    }
+
+    /// Wait for an alert to come and return it's value
+    pub async fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
+        if let Some(p) = &mut self.alert {
+            if let AlertPin::DataReady(_) = p {
+            } else {
+                self.tmp_ll
+                    .edit(|r: Configuration| {
+                        r.with_dr_alert(AlertPinSelect::Alert)
+                            .with_polarity(Polarity::ActiveHigh)
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            p.borrow_mut().wait_for_high().await;
+            self.alert.as_ref().map(|v| Some(AlertPin::Alert(v)));
+            self.check_alert();
+        } else {
+            loop {
+                if let Ok(v) = self.check_alert().await {
+                    return Ok(v);
+                }
+            }
         }
     }
 }
