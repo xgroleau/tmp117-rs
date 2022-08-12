@@ -30,11 +30,30 @@ pub enum Alert {
     HighLow,
 }
 
+/// The continuous config
+#[derive(Default)]
+pub struct ContinousConfig {
+    /// The average used, will use the one stored in the register if None
+    pub average: Option<Average>,
+
+    /// The convesion used, will use the one stored in the register if None
+    pub conversion: Option<Conversion>,
+
+    /// The high alert used, will use the one stored in the register if None
+    pub high: Option<f32>,
+
+    /// The low alert used, will use the one stored in the register if None
+    pub low: Option<f32>,
+
+    /// The temperature offset used, will use 0 if None
+    pub offset: Option<f32>,
+}
+
 /// Conversion factor used by the device. One lsb is this value
 pub const CELCIUS_CONVERSION: f32 = 7.8125;
 
 /// Typestate for unkown state. Only used on creation and reset when the state is unknown.
-pub struct Unknown;
+pub struct UnknownMode;
 
 /// Typestate for continuous mode
 pub struct ContinuousMode;
@@ -45,7 +64,9 @@ pub struct ShutdownMode;
 /// Typestate for oneshot mode
 pub struct OneShotMode;
 
-/// The TMP117 driver
+/// The TMP117 driver. Note that the alert pin is not used in this driver since it would be blocking,
+/// allowing the user to use interrupts callback.
+/// See the async implementation if you want the driver to use it internally
 pub struct Tmp117<const ADDR: u8, T, E, M>
 where
     T: I2c<SevenBitAddress, Error = E>,
@@ -61,16 +82,16 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Create a new tmp117 from a i2c bus
-    pub fn new(i2c: T) -> Tmp117<ADDR, T, E, Unknown> {
-        Tmp117::<ADDR, T, E, Unknown> {
+    pub fn new(i2c: T) -> Tmp117<ADDR, T, E, UnknownMode> {
+        Tmp117::<ADDR, T, E, UnknownMode> {
             tmp_ll: Tmp117LL::new(i2c),
             mode: PhantomData,
         }
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>) -> Tmp117<ADDR, T, E, Unknown> {
-        Tmp117::<ADDR, T, E, Unknown> {
+    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>) -> Tmp117<ADDR, T, E, UnknownMode> {
+        Tmp117::<ADDR, T, E, UnknownMode> {
             tmp_ll,
             mode: PhantomData,
         }
@@ -90,16 +111,32 @@ where
     /// Go to continuous mode
     pub fn to_continuous(
         mut self,
-        average: Average,
-        conversion: Conversion,
+        config: ContinousConfig,
     ) -> Result<Tmp117<ADDR, T, E, ContinuousMode>, Error<E>> {
         self.tmp_ll
-            .edit(|r: Configuration| {
-                r.with_mode(ConversionMode::Continuous)
-                    .with_average(average)
-                    .with_conversion(conversion)
+            .edit(|mut r: Configuration| {
+                r.set_mode(ConversionMode::Continuous);
+                if let Some(val) = config.average {
+                    r.set_average(val);
+                }
+                if let Some(val) = config.conversion {
+                    r.set_conversion(val);
+                }
+                r
             })
             .map_err(Error::Bus)?;
+        if let Some(val) = config.high {
+            let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(high).map_err(Error::Bus)?;
+        }
+        if let Some(val) = config.low {
+            let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(low).map_err(Error::Bus)?;
+        }
+        if let Some(val) = config.offset {
+            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(off).map_err(Error::Bus)?;
+        }
 
         Ok(Tmp117::<ADDR, T, E, ContinuousMode> {
             tmp_ll: self.tmp_ll,
@@ -135,12 +172,12 @@ where
     }
 
     /// Reset  the device
-    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, Unknown>, Error<E>> {
+    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, UnknownMode>, Error<E>> {
         self.tmp_ll
             .edit(|r: Configuration| r.with_reset(true))
             .map_err(Error::Bus)?;
 
-        Ok(Tmp117::<ADDR, T, E, Unknown> {
+        Ok(Tmp117::<ADDR, T, E, UnknownMode> {
             tmp_ll: self.tmp_ll,
             mode: PhantomData,
         })

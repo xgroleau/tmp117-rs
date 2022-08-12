@@ -1,3 +1,5 @@
+//! The definitions of drivers of the TMP117
+
 use modular_bitfield::prelude::*;
 use register_macro::{RERegister, RORegister, RWRegister};
 
