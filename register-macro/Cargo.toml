@@ -10,6 +10,6 @@ authors = [ "Xavier Groleau <xavgroleau@gmail.com>" ]
 proc-macro = true
 
 [dependencies]
-syn = "1.0.91"
+syn = { version = "1.0.91", features = ["extra-traits"] }
 quote = "1.0.18"
 proc-macro2 = "1.0.37"

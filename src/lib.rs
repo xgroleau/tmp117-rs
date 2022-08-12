@@ -1,8 +1,5 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+#![no_std]
+
+pub mod asynchronous;
+pub mod register;
+pub mod tmp117_ll;
