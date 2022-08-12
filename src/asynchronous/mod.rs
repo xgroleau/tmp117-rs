@@ -13,6 +13,16 @@ use crate::{
 use self::tmp117_ll::Tmp117LL;
 pub mod tmp117_ll;
 
+/// The status of the alert pin
+pub enum AlertPin<P> {
+    /// Unkown, right after boot
+    Unkown(P),
+    /// Currently in data ready
+    DataReady(P),
+    /// Currently in alert
+    Alert(P),
+}
+
 /// The TMP117 driver. Note that the alert pin is not used in this driver since it would be blocking,
 /// allowing the user to use interrupts callback.
 /// See the async implementation if you want the driver to use it internally
@@ -22,8 +32,8 @@ where
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
-    tmp_ll: Tmp117LL<ADDR, T, E, P>,
-    alert: Option<P>,
+    tmp_ll: Tmp117LL<ADDR, T, E>,
+    alert: Option<AlertPin<P>>,
     mode: PhantomData<M>,
 }
 
@@ -43,7 +53,7 @@ where
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E, P>) -> Tmp117<ADDR, T, E, P, UnknownMode> {
+    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>) -> Tmp117<ADDR, T, E, P, UnknownMode> {
         Tmp117::<ADDR, T, E, P, UnknownMode> {
             tmp_ll,
             alert: None,
@@ -113,6 +123,7 @@ where
 
         Ok(Tmp117::<ADDR, T, E, P, OneShotMode> {
             tmp_ll: self.tmp_ll,
+            alert: self.alert,
             mode: PhantomData,
         })
     }
@@ -213,6 +224,14 @@ where
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
+    async fn read_temp_raw(&mut self) -> Result<f32, Error<E>> {
+        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
+
+        // Convert to i16 for two complements
+        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
+        Ok(val)
+    }
+
     /// Read the temperature
     pub async fn read_temp(&mut self) -> Result<f32, Error<E>> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
@@ -220,11 +239,20 @@ where
             return Err(Error::DataNotReady);
         }
 
-        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        self.read_temp_raw().await
+    }
 
-        // Convert to i16 for two complements
-        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
-        Ok(val)
+    /// Wait for the data to be ready and read the temperature after
+    pub async fn wait_read_temp(&mut self) -> Result<f32, Error<E>> {
+        if let Some(AlertPin::DataReady(_)) = self.alert {
+        } else {
+            self.tmp_ll
+                .edit(|r: Configuration| r.with_dr_alert(AlertPinSelect::DataReady))
+                .await
+                .map_err(Error::Bus)?;
+            self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
+        }
+        Ok(32.2)
     }
 
     /// Check if an alert was triggered since the last calll

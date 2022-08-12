@@ -1,5 +1,5 @@
 //! The definitions of drivers of the TMP117
-
+#![allow(clippy::identity_op)]
 use modular_bitfield::prelude::*;
 use register_macro::{RERegister, RORegister, RWRegister};
 
@@ -30,7 +30,7 @@ pub struct Temperature(B16);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
 #[bits = 1]
-pub enum AlertPin {
+pub enum AlertPinSelect {
     ///Alert pin reflects the status of the alert flag
     Alert = 0,
 
@@ -152,7 +152,7 @@ pub struct Configuration {
     pub reset: bool,
 
     /// Data ready or Alert pin select bit.
-    pub dr_alert: AlertPin,
+    pub dr_alert: AlertPinSelect,
 
     /// Alert pin polarity.
     pub polarity: Polarity,

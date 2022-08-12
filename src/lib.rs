@@ -219,6 +219,7 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Read the temperature and goes to shutdown mode since it's a oneshot
+    #[allow(clippy::type_complexity)]
     pub fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error<E>> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if !config.data_ready() {
