@@ -7,6 +7,10 @@
 pub enum Error<E> {
     /// Internal i2c bus error
     Bus(E),
+
     /// Data is not ready
     DataNotReady,
+
+    /// Alert pin error
+    AlertPin,
 }

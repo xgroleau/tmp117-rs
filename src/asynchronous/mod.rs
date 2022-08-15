@@ -14,7 +14,7 @@ use self::tmp117_ll::Tmp117LL;
 pub mod tmp117_ll;
 
 /// The status of the alert pin
-pub enum AlertPin<P> {
+enum AlertPin<P> {
     /// Unkown, right after boot
     Unkown(P),
     /// Currently in data ready
@@ -23,6 +23,7 @@ pub enum AlertPin<P> {
     Alert(P),
 }
 impl<P> AlertPin<P> {
+    /// Borrow a mutable reference to then internal pin without caring for it's state
     pub fn borrow_mut(&mut self) -> &mut P {
         match self {
             AlertPin::Unkown(p) => p,
@@ -32,9 +33,8 @@ impl<P> AlertPin<P> {
     }
 }
 
-/// The TMP117 driver. Note that the alert pin is not used in this driver since it would be blocking,
-/// allowing the user to use interrupts callback.
-/// See the async implementation if you want the driver to use it internally
+/// The TMP117 driver. Note that the alert pin is optional, but it is recommended to pass it if possible
+/// If the alert pin is `None`, the driver will poll the config register instead of waiting for the pin.
 pub struct Tmp117<const ADDR: u8, T, E, P, M>
 where
     T: I2c<SevenBitAddress, Error = E>,
@@ -53,19 +53,22 @@ where
     P: Wait,
 {
     /// Create a new tmp117 from a i2c bus
-    pub fn new(i2c: T) -> Tmp117<ADDR, T, E, P, UnknownMode> {
+    pub fn new(i2c: T, alert: Option<P>) -> Tmp117<ADDR, T, E, P, UnknownMode> {
         Tmp117::<ADDR, T, E, P, UnknownMode> {
             tmp_ll: Tmp117LL::new(i2c),
-            alert: None,
+            alert: alert.map(|p| AlertPin::Unkown(p)),
             mode: PhantomData,
         }
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>) -> Tmp117<ADDR, T, E, P, UnknownMode> {
+    pub fn new_from_ll(
+        tmp_ll: Tmp117LL<ADDR, T, E>,
+        alert: Option<P>,
+    ) -> Tmp117<ADDR, T, E, P, UnknownMode> {
         Tmp117::<ADDR, T, E, P, UnknownMode> {
             tmp_ll,
-            alert: None,
+            alert: alert.map(|p| AlertPin::Unkown(p)),
             mode: PhantomData,
         }
     }
@@ -264,17 +267,19 @@ where
                     .await
                     .map_err(Error::Bus)?;
             }
-            p.borrow_mut().wait_for_high().await;
+            p.borrow_mut()
+                .wait_for_high()
+                .await
+                .map_err(|_| Error::AlertPin)?;
             self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
             self.read_temp_raw().await
         } else {
             loop {
-                match self.read_temp().await {
-                    Ok(v) => return Ok(v),
-                    Err(e) => match e {
-                        Error::DataNotReady => break Err(Error::DataNotReady),
-                        e => return Err(e),
-                    },
+                let res = self.read_temp().await;
+                if let Err(Error::DataNotReady) = res {
+                    continue;
+                } else {
+                    return res;
                 }
             }
         }
@@ -297,7 +302,7 @@ where
     /// Wait for an alert to come and return it's value
     pub async fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
         if let Some(p) = &mut self.alert {
-            if let AlertPin::DataReady(_) = p {
+            if let AlertPin::Alert(_) = p {
             } else {
                 self.tmp_ll
                     .edit(|r: Configuration| {
@@ -307,13 +312,19 @@ where
                     .await
                     .map_err(Error::Bus)?;
             }
-            p.borrow_mut().wait_for_high().await;
+            p.borrow_mut()
+                .wait_for_high()
+                .await
+                .map_err(|_| Error::AlertPin)?;
             self.alert.as_ref().map(|v| Some(AlertPin::Alert(v)));
-            self.check_alert();
+            self.check_alert().await
         } else {
             loop {
-                if let Ok(v) = self.check_alert().await {
-                    return Ok(v);
+                let alert = self.check_alert().await;
+                if let Ok(Alert::None) = alert {
+                    continue;
+                } else {
+                    return alert;
                 }
             }
         }
