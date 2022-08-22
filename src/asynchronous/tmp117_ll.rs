@@ -1,8 +1,12 @@
 //! Async low level driver of the tmp117
-use embedded_hal::i2c::SevenBitAddress;
+use core::future::Future;
+
+use device_register::Register;
+use device_register_async::RegisterInterface;
+use embedded_hal::i2c::{ErrorKind, SevenBitAddress};
 use embedded_hal_async::i2c::I2c;
 
-use crate::register::{EditableRegister, Register, WritableRegister};
+use crate::register::Address;
 
 /// Async low level driver of the TPM117. Allows to read, write and edit the registers directly via the i2c bus
 pub struct Tmp117LL<const ADDR: u8, T, E>
@@ -22,51 +26,46 @@ where
     pub fn new(i2c: T) -> Self {
         Self { i2c }
     }
+}
 
-    async fn write_internal<R>(&mut self, reg: R) -> Result<(), E>
+impl<const ADDR: u8, T, E, R> RegisterInterface<R, Address, ErrorKind> for Tmp117LL<ADDR, T, E>
+where
+    R: Register<Address = Address, Error = ErrorKind> + Clone + From<u16>,
+    u16: From<R>,
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+{
+    type ReadOutput<'a> = impl Future<Output = Result<R, R::Error>>
     where
-        R: Register,
-        u16: From<R>,
-    {
-        let val: u16 = reg.into();
-        let packet = val.to_be_bytes();
+        Self: 'a ;
 
-        self.i2c
-            .write(ADDR, &[R::ADDRESS, packet[0], packet[1]])
-            .await
+    fn read_register(&mut self) -> Self::ReadOutput<'_> {
+        async {
+            let mut buff = [0; 2];
+            self.i2c
+                .write(ADDR, &[R::ADDRESS.0])
+                .await
+                .map_err(|e| e.kind())?;
+            self.i2c.read(ADDR, &mut buff).await.map_err(|e| e.kind())?;
+            let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
+            Ok(val.into())
+        }
     }
 
-    /// Read a register value
-    pub async fn read<R>(&mut self) -> Result<R, E>
+    type WriteOutput<'a> = impl Future<Output = Result<(), R::Error>>
     where
-        R: Register + From<u16>,
-    {
-        let mut buff = [0; 2];
-        self.i2c.write(ADDR, &[R::ADDRESS]).await?;
-        self.i2c.read(ADDR, &mut buff).await?;
-        let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
-        Ok(val.into())
-    }
+        Self: 'a,
+        R: 'a;
 
-    /// Edit a register, use the argument from the passed function and edit the fields,
-    /// do not overwrite the register entirely, some bits are reserved
-    pub async fn edit<R, F>(&mut self, f: F) -> Result<(), E>
-    where
-        F: FnOnce(R) -> R,
-        R: EditableRegister + From<u16>,
-        u16: From<R>,
-    {
-        let val: R = self.read().await?;
-        let new_val = f(val);
-        self.write_internal(new_val).await
-    }
+    fn write_register<'a>(&'a mut self, register: &'a R) -> Self::WriteOutput<'a> {
+        async {
+            let val: u16 = register.clone().into();
+            let packet = val.to_be_bytes();
 
-    /// Write to a register
-    pub async fn write<R>(&mut self, reg: R) -> Result<(), E>
-    where
-        R: WritableRegister,
-        u16: From<R>,
-    {
-        self.write_internal(reg).await
+            self.i2c
+                .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
+                .await
+                .map_err(|e| e.kind())
+        }
     }
 }

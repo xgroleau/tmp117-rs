@@ -1,10 +1,13 @@
 //! A library to manipulate the TI [TMP117](https://www.ti.com/product/TMP117)
 #![no_std]
 #![no_main]
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 #![deny(unsafe_code, missing_docs)]
 
 use core::marker::PhantomData;
 
+use device_register::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::i2c::{blocking::I2c, SevenBitAddress};
 pub use error::Error;
 pub use modular_bitfield::Specifier;
@@ -97,13 +100,11 @@ where
         }
     }
 
-    fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
-        while self
-            .tmp_ll
-            .read::<Configuration>()
-            .map_err(Error::Bus)?
-            .eeprom_busy()
-        {}
+    fn wait_eeprom(&mut self) -> Result<(), Error> {
+        let mut configuration: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+        while configuration.eeprom_busy() {
+            configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+        }
 
         Ok(())
     }
@@ -112,9 +113,9 @@ where
     pub fn to_continuous(
         mut self,
         config: ContinousConfig,
-    ) -> Result<Tmp117<ADDR, T, E, ContinuousMode>, Error<E>> {
+    ) -> Result<Tmp117<ADDR, T, E, ContinuousMode>, Error> {
         self.tmp_ll
-            .edit(|mut r: Configuration| {
+            .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Continuous);
                 if let Some(val) = config.average {
                     r.set_average(val);
@@ -148,9 +149,13 @@ where
     pub fn to_oneshot(
         mut self,
         average: Average,
-    ) -> Result<Tmp117<ADDR, T, E, OneShotMode>, Error<E>> {
+    ) -> Result<Tmp117<ADDR, T, E, OneShotMode>, Error> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_mode(ConversionMode::OneShot).with_average(average))
+            .edit(|r: &mut Configuration| {
+                r.set_mode(ConversionMode::OneShot);
+                r.set_average(average);
+                r
+            })
             .map_err(Error::Bus)?;
 
         Ok(Tmp117::<ADDR, T, E, OneShotMode> {
@@ -160,9 +165,12 @@ where
     }
 
     /// Go to shotdown mode
-    pub fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, ShutdownMode>, Error<E>> {
+    pub fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, ShutdownMode>, Error> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_mode(ConversionMode::Shutdown))
+            .edit(|r: &mut Configuration| {
+                r.set_mode(ConversionMode::Shutdown);
+                r
+            })
             .map_err(Error::Bus)?;
 
         Ok(Tmp117::<ADDR, T, E, ShutdownMode> {
@@ -172,9 +180,12 @@ where
     }
 
     /// Reset  the device
-    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, UnknownMode>, Error<E>> {
+    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, UnknownMode>, Error> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_reset(true))
+            .edit(|r: &mut Configuration| {
+                r.set_reset(true);
+                r
+            })
             .map_err(Error::Bus)?;
 
         Ok(Tmp117::<ADDR, T, E, UnknownMode> {
@@ -184,27 +195,27 @@ where
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
-    pub fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error<E>> {
+    pub fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error> {
         self.wait_eeprom()?;
         self.tmp_ll
-            .write::<UEEPROM1>(values[0].into())
+            .write(UEEPROM1::from(values[0]))
             .map_err(Error::Bus)?;
 
         self.wait_eeprom()?;
         self.tmp_ll
-            .write::<UEEPROM2>(values[1].into())
+            .write(UEEPROM2::from(values[1]))
             .map_err(Error::Bus)?;
 
         self.wait_eeprom()?;
         self.tmp_ll
-            .write::<UEEPROM3>(values[2].into())
+            .write(UEEPROM3::from(values[2]))
             .map_err(Error::Bus)?;
 
         Ok(())
     }
 
     /// Read the data from the eeprom
-    pub fn read_eeprom(&mut self) -> Result<[u16; 3], Error<E>> {
+    pub fn read_eeprom(&mut self) -> Result<[u16; 3], Error> {
         let u1: UEEPROM1 = self.tmp_ll.read().map_err(Error::Bus)?;
         let u2: UEEPROM2 = self.tmp_ll.read().map_err(Error::Bus)?;
         let u3: UEEPROM3 = self.tmp_ll.read().map_err(Error::Bus)?;
@@ -220,7 +231,7 @@ where
 {
     /// Read the temperature and goes to shutdown mode since it's a oneshot
     #[allow(clippy::type_complexity)]
-    pub fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error<E>> {
+    pub fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
@@ -245,7 +256,7 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Read the temperature
-    pub fn read_temp(&mut self) -> Result<f32, Error<E>> {
+    pub fn read_temp(&mut self) -> Result<f32, Error> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
@@ -259,7 +270,7 @@ where
     }
 
     /// Check if an alert was triggered since the last calll
-    pub fn check_alert(&mut self) -> Result<Alert, Error<E>> {
+    pub fn check_alert(&mut self) -> Result<Alert, Error> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)

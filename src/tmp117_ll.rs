@@ -1,7 +1,11 @@
 //! The low level driver of the TPM117
-use embedded_hal::i2c::{blocking::I2c, SevenBitAddress};
+use device_register::{Register, RegisterInterface};
+use embedded_hal::{
+    i2c::ErrorKind,
+    i2c::{blocking::I2c, SevenBitAddress},
+};
 
-use crate::register::{EditableRegister, Register, WritableRegister};
+use crate::register::Address;
 
 /// The low level driver of the TPM117. Allows to read, write and edit the registers directly via the i2c bus
 pub struct Tmp117LL<const ADDR: u8, T, E>
@@ -21,49 +25,31 @@ where
     pub fn new(i2c: T) -> Self {
         Self { i2c }
     }
+}
 
-    fn write_internal<R>(&mut self, reg: R) -> Result<(), E>
-    where
-        R: Register,
-        u16: From<R>,
-    {
-        let val: u16 = reg.into();
-        let packet = val.to_be_bytes();
-
-        self.i2c.write(ADDR, &[R::ADDRESS, packet[0], packet[1]])
-    }
-
-    /// Read a register value
-    pub fn read<R>(&mut self) -> Result<R, E>
-    where
-        R: Register + From<u16>,
-    {
+impl<const ADDR: u8, T, E, R> RegisterInterface<R, Address, ErrorKind> for Tmp117LL<ADDR, T, E>
+where
+    R: Register<Address = Address, Error = ErrorKind> + Clone + From<u16>,
+    u16: From<R>,
+    E: embedded_hal::i2c::Error,
+    T: embedded_hal::i2c::blocking::I2c + embedded_hal::i2c::ErrorType<Error = E>,
+{
+    fn read_register(&mut self) -> Result<R, R::Error> {
         let mut buff = [0; 2];
-        self.i2c.write(ADDR, &[R::ADDRESS])?;
-        self.i2c.read(ADDR, &mut buff)?;
+        self.i2c
+            .write(ADDR, &[R::ADDRESS.0])
+            .map_err(|e| e.kind())?;
+        self.i2c.read(ADDR, &mut buff).map_err(|e| e.kind())?;
         let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
         Ok(val.into())
     }
 
-    /// Edit a register, use the argument from the passed function and edit the fields,
-    /// do not overwrite the register entirely, some bits are reserved
-    pub fn edit<R, F>(&mut self, f: F) -> Result<(), E>
-    where
-        F: FnOnce(R) -> R,
-        R: EditableRegister + From<u16>,
-        u16: From<R>,
-    {
-        let val: R = self.read()?;
-        let new_val = f(val);
-        self.write_internal(new_val)
-    }
+    fn write_register(&mut self, register: &R) -> Result<(), R::Error> {
+        let val: u16 = register.clone().into();
+        let packet = val.to_be_bytes();
 
-    /// Write to a register
-    pub fn write<R>(&mut self, reg: R) -> Result<(), E>
-    where
-        R: WritableRegister,
-        u16: From<R>,
-    {
-        self.write_internal(reg)
+        self.i2c
+            .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
+            .map_err(|r| r.kind())
     }
 }

@@ -1,20 +1,11 @@
 //! The definitions of drivers of the TMP117
 #![allow(clippy::identity_op)]
+use device_register::{RERegister, RORegister, RWRegister};
+use embedded_hal::i2c::ErrorKind;
 use modular_bitfield::prelude::*;
-use register_macro::{RERegister, RORegister, RWRegister};
 
-/// Trait of a register, can be read and has an address
-pub trait Register {
-    /// The address of the register
-    const ADDRESS: u8;
-}
-
-/// Trait of a register, can be read and edit.
-/// Editing a register allows to safely modify only a subset of values
-pub trait EditableRegister: Register {}
-
-/// Trait a writable register, like a register but can be written to
-pub trait WritableRegister: EditableRegister {}
+/// The address of the register
+pub struct Address(pub u8);
 
 /// Temperature register. The value is in 1/7.8125 m°C.
 /// Following a reset, the temperature register reads –256 °C until the first conversion,
@@ -23,7 +14,7 @@ pub trait WritableRegister: EditableRegister {}
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
-#[address(0x00)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x00)")]
 pub struct Temperature(B16);
 
 /// Represent the dataready or alert pin select
@@ -34,7 +25,7 @@ pub enum AlertPinSelect {
     ///Alert pin reflects the status of the alert flag
     Alert = 0,
 
-    ///Alert pin reflects the status of teh data ready flag
+    ///Alert pin reflects the status of the data ready flag
     DataReady = 1,
 }
 
@@ -143,7 +134,7 @@ pub enum ConversionMode {
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RERegister)]
-#[address(0x01)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x01)")]
 pub struct Configuration {
     #[skip]
     __: B1,
@@ -209,7 +200,7 @@ pub struct Configuration {
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x02)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x02)")]
 pub struct HighLimit(B16);
 
 /// The low limit register is configured as a 16-bit, read/write register that stores the low limit for comparison with the
@@ -221,7 +212,7 @@ pub struct HighLimit(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x03)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x03)")]
 pub struct LowLimit(B16);
 
 /// The eeprom configuration register
@@ -229,7 +220,7 @@ pub struct LowLimit(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RERegister)]
-#[address(0x04)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x04)")]
 pub struct EEPROM {
     #[skip]
     __: B14,
@@ -252,7 +243,7 @@ pub struct EEPROM {
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x05)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x05)")]
 pub struct UEEPROM1(B16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
@@ -260,7 +251,7 @@ pub struct UEEPROM1(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x06)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x06)")]
 pub struct UEEPROM2(B16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
@@ -268,7 +259,7 @@ pub struct UEEPROM2(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x07)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x07)")]
 pub struct UEEPROM3(B16);
 
 /// This 16-bit register is to be used as a user-defined temperature offset register during system calibration. The
@@ -280,7 +271,7 @@ pub struct UEEPROM3(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
-#[address(0x08)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x08)")]
 pub struct TemperatureOffset(B16);
 
 /// Indicates the device ID
@@ -288,7 +279,7 @@ pub struct TemperatureOffset(B16);
 #[repr(u16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
-#[address(0x0F)]
+#[register(ty = "Address", err = "ErrorKind", addr = "Address(0x0F)")]
 pub struct DeviceID {
     /// Indicates the device ID
     pub device_id: B12,

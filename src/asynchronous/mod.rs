@@ -2,6 +2,7 @@
 
 use core::marker::PhantomData;
 
+use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::i2c::SevenBitAddress;
 use embedded_hal_async::{digital::Wait, i2c::I2c};
 
@@ -73,14 +74,11 @@ where
         }
     }
 
-    async fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
-        while self
-            .tmp_ll
-            .read::<Configuration>()
-            .await
-            .map_err(Error::Bus)?
-            .eeprom_busy()
-        {}
+    async fn wait_eeprom(&mut self) -> Result<(), Error> {
+        let mut configuration: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        while configuration.eeprom_busy() {
+            configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        }
 
         Ok(())
     }
@@ -89,7 +87,7 @@ where
     pub async fn to_continuous(
         mut self,
         config: ContinousConfig,
-    ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Error<E>> {
+    ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Error> {
         self.tmp_ll
             .edit(|mut r: Configuration| {
                 r.set_mode(ConversionMode::Continuous);
@@ -127,7 +125,7 @@ where
     pub async fn to_oneshot(
         mut self,
         average: Average,
-    ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Error<E>> {
+    ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Error> {
         self.tmp_ll
             .edit(|r: Configuration| r.with_mode(ConversionMode::OneShot).with_average(average))
             .await
@@ -141,7 +139,7 @@ where
     }
 
     /// Go to shotdown mode
-    pub async fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Error<E>> {
+    pub async fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Error> {
         self.tmp_ll
             .edit(|r: Configuration| r.with_mode(ConversionMode::Shutdown))
             .await
@@ -155,7 +153,7 @@ where
     }
 
     /// Reset  the device
-    pub async fn reset(mut self) -> Result<Tmp117<ADDR, T, E, P, UnknownMode>, Error<E>> {
+    pub async fn reset(mut self) -> Result<Tmp117<ADDR, T, E, P, UnknownMode>, Error> {
         self.tmp_ll
             .edit(|r: Configuration| r.with_reset(true))
             .await
@@ -169,22 +167,22 @@ where
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
-    pub async fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error<E>> {
+    pub async fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error> {
         self.wait_eeprom().await?;
         self.tmp_ll
-            .write::<UEEPROM1>(values[0].into())
+            .write(UEEPROM1::from(values[0]))
             .await
             .map_err(Error::Bus)?;
 
         self.wait_eeprom().await?;
         self.tmp_ll
-            .write::<UEEPROM2>(values[1].into())
+            .write(UEEPROM2::from(values[1]))
             .await
             .map_err(Error::Bus)?;
 
         self.wait_eeprom().await?;
         self.tmp_ll
-            .write::<UEEPROM3>(values[2].into())
+            .write(UEEPROM3::from(values[2]))
             .await
             .map_err(Error::Bus)?;
 
@@ -192,7 +190,7 @@ where
     }
 
     /// Read the data from the eeprom
-    pub async fn read_eeprom(&mut self) -> Result<[u16; 3], Error<E>> {
+    pub async fn read_eeprom(&mut self) -> Result<[u16; 3], Error> {
         let u1: UEEPROM1 = self.tmp_ll.read().await.map_err(Error::Bus)?;
         let u2: UEEPROM2 = self.tmp_ll.read().await.map_err(Error::Bus)?;
         let u3: UEEPROM3 = self.tmp_ll.read().await.map_err(Error::Bus)?;
@@ -208,9 +206,7 @@ where
     P: Wait,
 {
     /// Read the temperature and goes to shutdown mode since it's a oneshot
-    pub async fn read_temp(
-        mut self,
-    ) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error<E>> {
+    pub async fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
@@ -236,7 +232,7 @@ where
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
-    async fn read_temp_raw(&mut self) -> Result<f32, Error<E>> {
+    async fn read_temp_raw(&mut self) -> Result<f32, Error> {
         let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
 
         // Convert to i16 for two complements
@@ -245,7 +241,7 @@ where
     }
 
     /// Read the temperature
-    pub async fn read_temp(&mut self) -> Result<f32, Error<E>> {
+    pub async fn read_temp(&mut self) -> Result<f32, Error> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
@@ -255,7 +251,7 @@ where
     }
 
     /// Wait for the data to be ready and read the temperature after
-    pub async fn wait_read_temp(&mut self) -> Result<f32, Error<E>> {
+    pub async fn wait_read_temp(&mut self) -> Result<f32, Error> {
         if let Some(p) = &mut self.alert {
             if let AlertPin::DataReady(_) = p {
             } else {
@@ -286,7 +282,7 @@ where
     }
 
     /// Check if an alert was triggered since the last calll
-    pub async fn check_alert(&mut self) -> Result<Alert, Error<E>> {
+    pub async fn check_alert(&mut self) -> Result<Alert, Error> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)
@@ -300,7 +296,7 @@ where
     }
 
     /// Wait for an alert to come and return it's value
-    pub async fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
+    pub async fn wait_alert(&mut self) -> Result<Alert, Error> {
         if let Some(p) = &mut self.alert {
             if let AlertPin::Alert(_) = p {
             } else {

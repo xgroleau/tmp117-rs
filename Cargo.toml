@@ -14,9 +14,10 @@ defmt = { version = "0.3.0", optional = true}
 embedded-hal = { version = "1.0.0-alpha.7" }
 embedded-hal-async = { version = "0.1.0-alpha.1" }
 
-register-macro = { path = "./register-macro", version = "0.1.0" }
 bit = "0.1.1"
 modular-bitfield = "0.11.2"
+device-register = { version = "0.1.0", git = "https://github.com/xgroleau/device-register" }
+device-register-async = { version = "0.1.0", git = "https://github.com/xgroleau/device-register" }
 
 # [dev-dependencies]
 # cortex-m = "0.7.3"
