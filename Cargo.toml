@@ -16,8 +16,8 @@ embedded-hal-async = { version = "0.1.0-alpha.1" }
 
 bit = "0.1.1"
 modular-bitfield = "0.11.2"
-device-register = { version = "0.1.0", git = "https://github.com/xgroleau/device-register" }
-device-register-async = { version = "0.1.0", git = "https://github.com/xgroleau/device-register" }
+device-register = { version = "0.1.0" }
+device-register-async = { version = "0.1.0" }
 
 # [dev-dependencies]
 # cortex-m = "0.7.3"
