@@ -1,9 +1,9 @@
 //! Async drivers of the tmp117
 
-use core::marker::PhantomData;
+use core::{future::Future, marker::PhantomData};
 
 use device_register_async::{EditRegister, ReadRegister, WriteRegister};
-use embedded_hal::i2c::SevenBitAddress;
+use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
 use embedded_hal_async::{digital::Wait, i2c::I2c};
 
 use crate::{
@@ -13,6 +13,43 @@ use crate::{
 
 use self::tmp117_ll::Tmp117LL;
 pub mod tmp117_ll;
+
+/// Dummy type for wait pin, should never be instanciated
+pub struct DummyWait(());
+impl ErrorType for DummyWait {
+    type Error = ();
+}
+impl Wait for DummyWait {
+    type WaitForHighFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
+
+    fn wait_for_high<'a>(&'a mut self) -> Self::WaitForHighFuture<'a> {
+        async { todo!() }
+    }
+
+    type WaitForLowFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
+
+    fn wait_for_low<'a>(&'a mut self) -> Self::WaitForLowFuture<'a> {
+        async { todo!() }
+    }
+
+    type WaitForRisingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
+
+    fn wait_for_rising_edge<'a>(&'a mut self) -> Self::WaitForRisingEdgeFuture<'a> {
+        async { todo!() }
+    }
+
+    type WaitForFallingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
+
+    fn wait_for_falling_edge<'a>(&'a mut self) -> Self::WaitForFallingEdgeFuture<'a> {
+        async { todo!() }
+    }
+
+    type WaitForAnyEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
+
+    fn wait_for_any_edge<'a>(&'a mut self) -> Self::WaitForAnyEdgeFuture<'a> {
+        async { todo!() }
+    }
+}
 
 /// The status of the alert pin
 enum AlertPin<P> {
@@ -47,17 +84,32 @@ where
     mode: PhantomData<M>,
 }
 
-impl<const ADDR: u8, T, E, P, M> Tmp117<ADDR, T, E, P, M>
+impl<const ADDR: u8, T, E> Tmp117<ADDR, T, E, DummyWait, UnknownMode>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+{
+    /// Create a new tmp117 from a i2c bus
+    pub fn new(i2c: T) -> Tmp117<ADDR, T, E, DummyWait, UnknownMode> {
+        Tmp117::<ADDR, T, E, DummyWait, UnknownMode> {
+            tmp_ll: Tmp117LL::new(i2c),
+            alert: None,
+            mode: PhantomData,
+        }
+    }
+}
+
+impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, UnknownMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
-    /// Create a new tmp117 from a i2c bus
-    pub fn new(i2c: T, alert: Option<P>) -> Tmp117<ADDR, T, E, P, UnknownMode> {
+    /// Create a new tmp117 from a i2c bus and alert pin
+    pub fn new_alert(i2c: T, alert: P) -> Tmp117<ADDR, T, E, P, UnknownMode> {
         Tmp117::<ADDR, T, E, P, UnknownMode> {
             tmp_ll: Tmp117LL::new(i2c),
-            alert: alert.map(|p| AlertPin::Unkown(p)),
+            alert: Some(AlertPin::Unkown(alert)),
             mode: PhantomData,
         }
     }
@@ -65,15 +117,22 @@ where
     /// Create a new tmp117 from a low level tmp117 driver
     pub fn new_from_ll(
         tmp_ll: Tmp117LL<ADDR, T, E>,
-        alert: Option<P>,
+        alert: P,
     ) -> Tmp117<ADDR, T, E, P, UnknownMode> {
         Tmp117::<ADDR, T, E, P, UnknownMode> {
             tmp_ll,
-            alert: alert.map(|p| AlertPin::Unkown(p)),
+            alert: Some(AlertPin::Unkown(alert)),
             mode: PhantomData,
         }
     }
+}
 
+impl<const ADDR: u8, T, E, P, M> Tmp117<ADDR, T, E, P, M>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+    P: Wait,
+{
     async fn wait_eeprom(&mut self) -> Result<(), Error> {
         let mut configuration: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         while configuration.eeprom_busy() {
@@ -197,41 +256,7 @@ where
 
         Ok([u1.into(), u2.into(), u3.into()])
     }
-}
 
-impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, OneShotMode>
-where
-    T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
-    P: Wait,
-{
-    /// Read the temperature and goes to shutdown mode since it's a oneshot
-    pub async fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error> {
-        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        if !config.data_ready() {
-            return Err(Error::DataNotReady);
-        }
-
-        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        // Convert to i16 for two complements
-        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
-        Ok((
-            val,
-            Tmp117::<ADDR, T, E, P, ShutdownMode> {
-                tmp_ll: self.tmp_ll,
-                alert: self.alert,
-                mode: PhantomData,
-            },
-        ))
-    }
-}
-
-impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, ContinuousMode>
-where
-    T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
-    P: Wait,
-{
     async fn read_temp_raw(&mut self) -> Result<f32, Error> {
         let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
 
@@ -240,49 +265,7 @@ where
         Ok(val)
     }
 
-    /// Read the temperature
-    pub async fn read_temp(&mut self) -> Result<f32, Error> {
-        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        if !config.data_ready() {
-            return Err(Error::DataNotReady);
-        }
-
-        self.read_temp_raw().await
-    }
-
-    /// Wait for the data to be ready and read the temperature after
-    pub async fn wait_read_temp(&mut self) -> Result<f32, Error> {
-        if let Some(p) = &mut self.alert {
-            if let AlertPin::DataReady(_) = p {
-            } else {
-                self.tmp_ll
-                    .edit(|r: Configuration| {
-                        r.with_dr_alert(AlertPinSelect::DataReady)
-                            .with_polarity(Polarity::ActiveHigh)
-                    })
-                    .await
-                    .map_err(Error::Bus)?;
-            }
-            p.borrow_mut()
-                .wait_for_high()
-                .await
-                .map_err(|_| Error::AlertPin)?;
-            self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
-            self.read_temp_raw().await
-        } else {
-            loop {
-                let res = self.read_temp().await;
-                if let Err(Error::DataNotReady) = res {
-                    continue;
-                } else {
-                    return res;
-                }
-            }
-        }
-    }
-
-    /// Check if an alert was triggered since the last calll
-    pub async fn check_alert(&mut self) -> Result<Alert, Error> {
+    async fn check_alert(&mut self) -> Result<Alert, Error> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)
@@ -295,8 +278,41 @@ where
         }
     }
 
+    async fn wait_for_data(&mut self) -> Result<(), Error> {
+        // If we have a pin
+        if let Some(p) = &mut self.alert {
+            // If in data ready, just use it
+            if let AlertPin::DataReady(_) = p {
+            } else {
+                // If not, set it to data ready
+                self.tmp_ll
+                    .edit(|r: Configuration| {
+                        r.with_dr_alert(AlertPinSelect::DataReady)
+                            .with_polarity(Polarity::ActiveHigh)
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            // Wait for it to go high
+            p.borrow_mut()
+                .wait_for_high()
+                .await
+                .map_err(|_| Error::AlertPin)?;
+            self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
+        } else {
+            // Loop while the alert is not ok
+            loop {
+                let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+                if !config.data_ready() {
+                    continue;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Wait for an alert to come and return it's value
-    pub async fn wait_alert(&mut self) -> Result<Alert, Error> {
+    pub async fn wait_for_alert(&mut self) -> Result<Alert, Error> {
         if let Some(p) = &mut self.alert {
             if let AlertPin::Alert(_) = p {
             } else {
@@ -324,5 +340,60 @@ where
                 }
             }
         }
+    }
+}
+
+impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, OneShotMode>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+    P: Wait,
+{
+    /// Read the temperature and goes to shutdown mode since it's a oneshot
+    pub async fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error> {
+        self.wait_for_data().await?;
+
+        let val = self.read_temp_raw().await?;
+        Ok((
+            val,
+            Tmp117::<ADDR, T, E, P, ShutdownMode> {
+                tmp_ll: self.tmp_ll,
+                alert: self.alert,
+                mode: PhantomData,
+            },
+        ))
+    }
+}
+
+impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, ContinuousMode>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+    P: Wait,
+{
+    /// Read the temperature
+    pub async fn read_temp(&mut self) -> Result<f32, Error> {
+        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        if !config.data_ready() {
+            return Err(Error::DataNotReady);
+        }
+
+        self.read_temp_raw().await
+    }
+
+    /// Wait for the data to be ready and read the temperature after
+    pub async fn wait_read_temp(&mut self) -> Result<f32, Error> {
+        self.wait_for_data().await?;
+        self.read_temp().await
+    }
+
+    /// Check if an alert was triggered since the last calll
+    pub async fn get_alert(&mut self) -> Result<Alert, Error> {
+        self.check_alert().await
+    }
+
+    /// Wait for an alert to come and return it's value
+    pub async fn wait_alert(&mut self) -> Result<Alert, Error> {
+        self.wait_for_alert().await
     }
 }
