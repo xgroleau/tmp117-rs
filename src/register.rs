@@ -15,7 +15,7 @@ pub struct Address(pub u8);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x00)")]
-pub struct Temperature(B16);
+pub struct Temperature(pub B16);
 
 /// Represent the dataready or alert pin select
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -75,7 +75,7 @@ pub enum Average {
 }
 
 /// Conversion cycle. It depends on the average selected. The enum represents the values for no average.
-/// | CONV[2:0] | AVG[1:0] = 00 | AVG[1:0] = 01 | AVG[1:0] = 10 | AVG[1:0] = 11 |
+/// | CONV      | AVG = 00      | AVG = 01      | AVG = 10      | AVG = 11      |
 /// |-----------|---------------|---------------|---------------|---------------|
 /// | 000       | 15.5 ms       | 125 ms        | 500 ms        | 1 s           |
 /// | 001       | 125 ms        | 125 ms        | 500 ms        | 1 s           |
@@ -120,13 +120,13 @@ pub enum Conversion {
 #[bits = 2]
 pub enum ConversionMode {
     /// Continous conversion mode
-    Continuous = 0,
+    Continuous = 0b0,
 
     /// Shutdown conversion mode
-    Shutdown = 1,
+    Shutdown = 0b01,
 
     /// Oneshot conversion monde
-    OneShot = 3,
+    OneShot = 0b11,
 }
 
 /// Configuration register of the tpm117
@@ -201,7 +201,7 @@ pub struct Configuration {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x02)")]
-pub struct HighLimit(B16);
+pub struct HighLimit(pub B16);
 
 /// The low limit register is configured as a 16-bit, read/write register that stores the low limit for comparison with the
 /// temperature result. One LSB equals 7.8125 m°C. The range of the register is ±256 °C. Negative numbers
@@ -213,7 +213,7 @@ pub struct HighLimit(B16);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x03)")]
-pub struct LowLimit(B16);
+pub struct LowLimit(pub B16);
 
 /// The eeprom configuration register
 #[bitfield]
@@ -244,7 +244,7 @@ pub struct EEPROM {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x05)")]
-pub struct UEEPROM1(B16);
+pub struct UEEPROM1(pub B16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
 #[bitfield]
@@ -252,7 +252,7 @@ pub struct UEEPROM1(B16);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x06)")]
-pub struct UEEPROM2(B16);
+pub struct UEEPROM2(pub B16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
 #[bitfield]
@@ -260,7 +260,7 @@ pub struct UEEPROM2(B16);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x07)")]
-pub struct UEEPROM3(B16);
+pub struct UEEPROM3(pub B16);
 
 /// This 16-bit register is to be used as a user-defined temperature offset register during system calibration. The
 /// offset will be added to the temperature result after linearization. It has a same resolution of 7.8125 m°C and
@@ -272,7 +272,7 @@ pub struct UEEPROM3(B16);
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
 #[register(ty = "Address", err = "ErrorKind", addr = "Address(0x08)")]
-pub struct TemperatureOffset(B16);
+pub struct TemperatureOffset(pub B16);
 
 /// Indicates the device ID
 #[bitfield]

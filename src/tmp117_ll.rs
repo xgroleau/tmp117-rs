@@ -2,7 +2,7 @@
 use device_register::{Register, RegisterInterface};
 use embedded_hal::{
     i2c::ErrorKind,
-    i2c::{blocking::I2c, SevenBitAddress},
+    i2c::{I2c, SevenBitAddress},
 };
 
 use crate::register::Address;
@@ -32,7 +32,7 @@ where
     R: Register<Address = Address, Error = ErrorKind> + Clone + From<u16>,
     u16: From<R>,
     E: embedded_hal::i2c::Error,
-    T: embedded_hal::i2c::blocking::I2c + embedded_hal::i2c::ErrorType<Error = E>,
+    T: embedded_hal::i2c::I2c + embedded_hal::i2c::ErrorType<Error = E>,
 {
     fn read_register(&mut self) -> Result<R, R::Error> {
         let mut buff = [0; 2];
