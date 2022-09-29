@@ -30,6 +30,9 @@ for _ in 0..10 {
 let _  = tmp_cont.to_shutdown().unwrap();
 ```
 
+### MSRV
+Currently only rust `nightly-2022-09-29` and more is garanted to work with the library, but some previous version may work
+
 ### License
 Licensed under either of
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
