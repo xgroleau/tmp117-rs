@@ -75,7 +75,7 @@ pub enum Average {
 }
 
 /// Conversion cycle. It depends on the average selected. The enum represents the values for no average.
-/// | CONV[2:0] | AVG[1:0] = 00 | AVG[1:0] = 01 | AVG[1:0] = 10 | AVG[1:0] = 11 |
+/// | CONV      | AVG = 00      | AVG = 01      | AVG = 10      | AVG = 11      |
 /// |-----------|---------------|---------------|---------------|---------------|
 /// | 000       | 15.5 ms       | 125 ms        | 500 ms        | 1 s           |
 /// | 001       | 125 ms        | 125 ms        | 500 ms        | 1 s           |
@@ -120,13 +120,13 @@ pub enum Conversion {
 #[bits = 2]
 pub enum ConversionMode {
     /// Continous conversion mode
-    Continuous = 0,
+    Continuous = 0b0,
 
     /// Shutdown conversion mode
-    Shutdown = 1,
+    Shutdown = 0b01,
 
     /// Oneshot conversion monde
-    OneShot = 3,
+    OneShot = 0b11,
 }
 
 /// Configuration register of the tpm117

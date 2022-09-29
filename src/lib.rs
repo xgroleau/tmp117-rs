@@ -1,4 +1,45 @@
-//! A library to manipulate the TI [TMP117](https://www.ti.com/product/TMP117)
+//! A no_std platform agnostic driver in rust  for the [TMP117](https://www.ti.com/product/TMP117) temperature sensor
+//! using the [embedded-hal](https://github.com/rust-embedded/embedded-hal) and the [device-register](https://github.com/xgroleau/device-register) library.
+//! A Sync and Async API is available, see the examples folder for more complete usage
+//! The library makes usage of the [typestate](https://docs.rust-embedded.org/book/static-guarantees/typestate-programming.html) pattern.
+//! The low level api is always available if the typestate is too constraining
+//!
+//! ## Usage
+//!
+//! ```no_run
+//! // Pass the address of the tmp device
+//! let tmp = Tmp117::<0x49, _, _, _>::new(spi);
+//!
+//! // Transition to oneshot mode
+//! let tmp_one = tmp.to_oneshot(Average::NoAverage).unwrap();
+//! // Read and transition to shutdown since it's a one shot
+//! let (temperature, tmp_shut) = tmp_one.wait_temp().unwrap();
+//!
+//! // Transition to continuous mode
+//! let mut tmp_cont = tmp_shut.to_continuous(Default::default()).unwrap();
+//!
+//! // Get the value continuously in continuous mode
+//! for _ in 0..10 {
+//!     let temp = tmp_cont.wait_temp().unwrap();
+//!     info!("Temperature {}", temp);
+//! };
+//!
+//! // Shutdown the device
+//! let _  = tmp_cont.to_shutdown().unwrap();
+//! ```
+//!
+//! ## License
+//! Licensed under either of
+//! - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+//!   <http://www.apache.org/licenses/LICENSE-2.0>)
+//!
+//! - MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+//!
+//! at your option.
+//!
+//! ## Contribution
+//! Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+//!
 #![no_std]
 #![no_main]
 #![feature(generic_associated_types)]
@@ -23,6 +64,7 @@ pub mod tmp117_ll;
 pub enum Alert {
     /// No alert were triggered
     None,
+
     /// A high alert was triggered
     High,
 
@@ -53,7 +95,7 @@ pub struct ContinousConfig {
 }
 
 /// Conversion factor used by the device. One lsb is this value
-pub const CELCIUS_CONVERSION: f32 = 7.8125;
+pub const CELCIUS_CONVERSION: f32 = 0.0078125;
 
 /// Typestate for unkown state. Only used on creation and reset when the state is unknown.
 pub struct UnknownMode;
@@ -67,9 +109,8 @@ pub struct ShutdownMode;
 /// Typestate for oneshot mode
 pub struct OneShotMode;
 
-/// The TMP117 driver. Note that the alert pin is not used in this driver since it would be blocking,
-/// allowing the user to use interrupts callback.
-/// See the async implementation if you want the driver to use it internally
+/// The TMP117 driver. Note that the alert pin is not used in this driver,
+/// see the async implementation if you want the driver to use the alert pin in the drive
 pub struct Tmp117<const ADDR: u8, T, E, M>
 where
     T: I2c<SevenBitAddress, Error = E>,
@@ -79,7 +120,7 @@ where
     mode: PhantomData<M>,
 }
 
-impl<const ADDR: u8, T, E, M> Tmp117<ADDR, T, E, M>
+impl<const ADDR: u8, T, E> Tmp117<ADDR, T, E, UnknownMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
@@ -99,7 +140,13 @@ where
             mode: PhantomData,
         }
     }
+}
 
+impl<const ADDR: u8, T, E, M> Tmp117<ADDR, T, E, M>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error,
+{
     fn wait_eeprom(&mut self) -> Result<(), Error> {
         let mut configuration: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         while configuration.eeprom_busy() {
@@ -107,6 +154,49 @@ where
         }
 
         Ok(())
+    }
+
+    fn read_temp_raw(&mut self) -> Result<f32, Error> {
+        let temp: Temperature = self.tmp_ll.read().map_err(Error::Bus)?;
+
+        // Convert to i16 for two complements
+        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
+        Ok(val)
+    }
+
+    fn check_alert(&mut self) -> Result<Alert, Error> {
+        let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+        if config.high_alert() && config.low_alert() {
+            Ok(Alert::HighLow)
+        } else if config.high_alert() {
+            Ok(Alert::High)
+        } else if config.low_alert() {
+            Ok(Alert::Low)
+        } else {
+            Ok(Alert::None)
+        }
+    }
+
+    fn wait_for_data(&mut self) -> Result<(), Error> {
+        // Loop while the data is not ok
+        loop {
+            let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+            if config.data_ready() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn wait_for_alert(&mut self) -> Result<Alert, Error> {
+        loop {
+            let alert = self.check_alert();
+            if let Ok(Alert::None) = alert {
+                continue;
+            } else {
+                return alert;
+            }
+        }
     }
 
     /// Go to continuous mode
@@ -229,17 +319,11 @@ where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
 {
-    /// Read the temperature and goes to shutdown mode since it's a oneshot
-    #[allow(clippy::type_complexity)]
-    pub fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error> {
-        let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
-        if !config.data_ready() {
-            return Err(Error::DataNotReady);
-        }
+    /// Wait for data and read the temperature in celsius and goes to shutdown mode since it's a oneshot
+    pub fn wait_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error> {
+        self.wait_for_data()?;
 
-        let temp: Temperature = self.tmp_ll.read().map_err(Error::Bus)?;
-        // Convert to i16 for two complements
-        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
+        let val = self.read_temp_raw()?;
         Ok((
             val,
             Tmp117::<ADDR, T, E, ShutdownMode> {
@@ -255,31 +339,29 @@ where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
 {
-    /// Read the temperature
+    /// Read the temperature in celsius, return an error if the value of the temperature is not ready
     pub fn read_temp(&mut self) -> Result<f32, Error> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
         }
 
-        let temp: Temperature = self.tmp_ll.read().map_err(Error::Bus)?;
+        self.read_temp_raw()
+    }
 
-        // Convert to i16 for two complements
-        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
-        Ok(val)
+    /// Wait for the data to be ready and read the temperature in celsius
+    pub fn wait_temp(&mut self) -> Result<f32, Error> {
+        self.wait_for_data()?;
+        self.read_temp_raw()
     }
 
     /// Check if an alert was triggered since the last calll
-    pub fn check_alert(&mut self) -> Result<Alert, Error> {
-        let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
-        if config.high_alert() && config.low_alert() {
-            Ok(Alert::HighLow)
-        } else if config.high_alert() {
-            Ok(Alert::High)
-        } else if config.low_alert() {
-            Ok(Alert::Low)
-        } else {
-            Ok(Alert::None)
-        }
+    pub fn get_alert(&mut self) -> Result<Alert, Error> {
+        self.check_alert()
+    }
+
+    /// Wait for an alert to come and return it's value
+    pub fn wait_alert(&mut self) -> Result<Alert, Error> {
+        self.wait_for_alert()
     }
 }

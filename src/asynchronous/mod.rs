@@ -14,7 +14,7 @@ use crate::{
 use self::tmp117_ll::Tmp117LL;
 pub mod tmp117_ll;
 
-/// Dummy type for wait pin, should never be instanciated
+/// Dummy type for wait pin, should never be
 pub struct DummyWait(());
 impl ErrorType for DummyWait {
     type Error = ();
@@ -55,9 +55,9 @@ impl Wait for DummyWait {
 enum AlertPin<P> {
     /// Unkown, right after boot
     Unkown(P),
-    /// Currently in data ready
+    /// Currently in data ready mode
     DataReady(P),
-    /// Currently in alert
+    /// Currently in alert mode
     Alert(P),
 }
 impl<P> AlertPin<P> {
@@ -142,6 +142,95 @@ where
         Ok(())
     }
 
+    async fn read_temp_raw(&mut self) -> Result<f32, Error> {
+        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
+
+        // Convert to i16 for two complements
+        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
+        Ok(val)
+    }
+
+    async fn check_alert(&mut self) -> Result<Alert, Error> {
+        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        if config.high_alert() && config.low_alert() {
+            Ok(Alert::HighLow)
+        } else if config.high_alert() {
+            Ok(Alert::High)
+        } else if config.low_alert() {
+            Ok(Alert::Low)
+        } else {
+            Ok(Alert::None)
+        }
+    }
+
+    async fn wait_for_data(&mut self) -> Result<(), Error> {
+        // If we have a pin
+        if let Some(p) = &mut self.alert {
+            // If in data ready, just use it
+            if let AlertPin::DataReady(_) = p {
+            } else {
+                // If not, set it to data ready
+                self.tmp_ll
+                    .edit(|r: Configuration| {
+                        r.with_dr_alert(AlertPinSelect::DataReady)
+                            .with_polarity(Polarity::ActiveHigh)
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            // Wait for it to go high
+            p.borrow_mut()
+                .wait_for_low()
+                .await
+                .map_err(|_| Error::AlertPin)?;
+
+            // Clear flag in register
+            let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+            assert!(config.data_ready());
+
+            self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
+        } else {
+            // Loop while the alert is not ok
+            loop {
+                let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+                if config.data_ready() {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn wait_for_alert(&mut self) -> Result<Alert, Error> {
+        if let Some(p) = &mut self.alert {
+            if let AlertPin::Alert(_) = p {
+            } else {
+                self.tmp_ll
+                    .edit(|r: Configuration| {
+                        r.with_dr_alert(AlertPinSelect::Alert)
+                            .with_polarity(Polarity::ActiveHigh)
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            p.borrow_mut()
+                .wait_for_high()
+                .await
+                .map_err(|_| Error::AlertPin)?;
+            self.alert.as_ref().map(|v| Some(AlertPin::Alert(v)));
+            self.check_alert().await
+        } else {
+            loop {
+                let alert = self.check_alert().await;
+                if let Ok(Alert::None) = alert {
+                    continue;
+                } else {
+                    return alert;
+                }
+            }
+        }
+    }
+
     /// Go to continuous mode
     pub async fn to_continuous(
         mut self,
@@ -149,6 +238,7 @@ where
     ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Error> {
         self.tmp_ll
             .edit(|mut r: Configuration| {
+                r.set_polarity(Polarity::ActiveLow);
                 r.set_mode(ConversionMode::Continuous);
                 if let Some(val) = config.average {
                     r.set_average(val);
@@ -186,7 +276,11 @@ where
         average: Average,
     ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Error> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_mode(ConversionMode::OneShot).with_average(average))
+            .edit(|r: Configuration| {
+                r.with_polarity(Polarity::ActiveLow)
+                    .with_mode(ConversionMode::OneShot)
+                    .with_average(average)
+            })
             .await
             .map_err(Error::Bus)?;
 
@@ -197,7 +291,7 @@ where
         })
     }
 
-    /// Go to shotdown mode
+    /// Go to shutdown mode
     pub async fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Error> {
         self.tmp_ll
             .edit(|r: Configuration| r.with_mode(ConversionMode::Shutdown))
@@ -256,91 +350,6 @@ where
 
         Ok([u1.into(), u2.into(), u3.into()])
     }
-
-    async fn read_temp_raw(&mut self) -> Result<f32, Error> {
-        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
-
-        // Convert to i16 for two complements
-        let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
-        Ok(val)
-    }
-
-    async fn check_alert(&mut self) -> Result<Alert, Error> {
-        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        if config.high_alert() && config.low_alert() {
-            Ok(Alert::HighLow)
-        } else if config.high_alert() {
-            Ok(Alert::High)
-        } else if config.low_alert() {
-            Ok(Alert::Low)
-        } else {
-            Ok(Alert::None)
-        }
-    }
-
-    async fn wait_for_data(&mut self) -> Result<(), Error> {
-        // If we have a pin
-        if let Some(p) = &mut self.alert {
-            // If in data ready, just use it
-            if let AlertPin::DataReady(_) = p {
-            } else {
-                // If not, set it to data ready
-                self.tmp_ll
-                    .edit(|r: Configuration| {
-                        r.with_dr_alert(AlertPinSelect::DataReady)
-                            .with_polarity(Polarity::ActiveHigh)
-                    })
-                    .await
-                    .map_err(Error::Bus)?;
-            }
-            // Wait for it to go high
-            p.borrow_mut()
-                .wait_for_high()
-                .await
-                .map_err(|_| Error::AlertPin)?;
-            self.alert.as_ref().map(|v| Some(AlertPin::DataReady(v)));
-        } else {
-            // Loop while the alert is not ok
-            loop {
-                let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
-                if !config.data_ready() {
-                    continue;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Wait for an alert to come and return it's value
-    pub async fn wait_for_alert(&mut self) -> Result<Alert, Error> {
-        if let Some(p) = &mut self.alert {
-            if let AlertPin::Alert(_) = p {
-            } else {
-                self.tmp_ll
-                    .edit(|r: Configuration| {
-                        r.with_dr_alert(AlertPinSelect::Alert)
-                            .with_polarity(Polarity::ActiveHigh)
-                    })
-                    .await
-                    .map_err(Error::Bus)?;
-            }
-            p.borrow_mut()
-                .wait_for_high()
-                .await
-                .map_err(|_| Error::AlertPin)?;
-            self.alert.as_ref().map(|v| Some(AlertPin::Alert(v)));
-            self.check_alert().await
-        } else {
-            loop {
-                let alert = self.check_alert().await;
-                if let Ok(Alert::None) = alert {
-                    continue;
-                } else {
-                    return alert;
-                }
-            }
-        }
-    }
 }
 
 impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, OneShotMode>
@@ -349,8 +358,8 @@ where
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
-    /// Read the temperature and goes to shutdown mode since it's a oneshot
-    pub async fn read_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error> {
+    /// Wait for data and read the temperature in celsius and goes to shutdown mode since it's a oneshot
+    pub async fn wait_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error> {
         self.wait_for_data().await?;
 
         let val = self.read_temp_raw().await?;
@@ -371,7 +380,7 @@ where
     E: embedded_hal::i2c::Error,
     P: Wait,
 {
-    /// Read the temperature
+    /// Read the temperature in celsius, return an error if the value of the temperature is not valid
     pub async fn read_temp(&mut self) -> Result<f32, Error> {
         let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         if !config.data_ready() {
@@ -381,10 +390,10 @@ where
         self.read_temp_raw().await
     }
 
-    /// Wait for the data to be ready and read the temperature after
-    pub async fn wait_read_temp(&mut self) -> Result<f32, Error> {
+    /// Wait for the data to be ready and read the temperature in celsius
+    pub async fn wait_temp(&mut self) -> Result<f32, Error> {
         self.wait_for_data().await?;
-        self.read_temp().await
+        self.read_temp_raw().await
     }
 
     /// Check if an alert was triggered since the last calll

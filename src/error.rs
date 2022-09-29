@@ -4,7 +4,7 @@ use embedded_hal::i2c::ErrorKind;
 
 /// Error emitted by the TMP117 drivers
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+// #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Error {
     /// Internal i2c bus error
     Bus(ErrorKind),
