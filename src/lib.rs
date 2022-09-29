@@ -42,14 +42,13 @@
 //!
 #![no_std]
 #![no_main]
-#![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
 #![deny(unsafe_code, missing_docs)]
 
 use core::marker::PhantomData;
 
 use device_register::{EditRegister, ReadRegister, WriteRegister};
-use embedded_hal::i2c::{blocking::I2c, SevenBitAddress};
+use embedded_hal::i2c::{I2c, SevenBitAddress};
 pub use error::Error;
 pub use modular_bitfield::Specifier;
 use register::*;
