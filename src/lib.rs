@@ -149,7 +149,7 @@ where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
 {
-    fn wait_eeprom(&mut self) -> Result<(), Error> {
+    fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
         let mut configuration: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         while configuration.eeprom_busy() {
             configuration = self.tmp_ll.read().map_err(Error::Bus)?;
@@ -158,7 +158,7 @@ where
         Ok(())
     }
 
-    fn read_temp_raw(&mut self) -> Result<f32, Error> {
+    fn read_temp_raw(&mut self) -> Result<f32, Error<E>> {
         let temp: Temperature = self.tmp_ll.read().map_err(Error::Bus)?;
 
         // Convert to i16 for two complements
@@ -166,7 +166,7 @@ where
         Ok(val)
     }
 
-    fn check_alert(&mut self) -> Result<Alert, Error> {
+    fn check_alert(&mut self) -> Result<Alert, Error<E>> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)
@@ -179,7 +179,7 @@ where
         }
     }
 
-    fn wait_for_data(&mut self) -> Result<(), Error> {
+    fn wait_for_data(&mut self) -> Result<(), Error<E>> {
         // Loop while the data is not ok
         loop {
             let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
@@ -190,7 +190,7 @@ where
         Ok(())
     }
 
-    fn wait_for_alert(&mut self) -> Result<Alert, Error> {
+    fn wait_for_alert(&mut self) -> Result<Alert, Error<E>> {
         loop {
             let alert = self.check_alert();
             if let Ok(Alert::None) = alert {
@@ -205,7 +205,7 @@ where
     pub fn to_continuous(
         mut self,
         config: ContinousConfig,
-    ) -> Result<Tmp117<ADDR, T, E, ContinuousMode>, Error> {
+    ) -> Result<Tmp117<ADDR, T, E, ContinuousMode>, Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Continuous);
@@ -241,7 +241,7 @@ where
     pub fn to_oneshot(
         mut self,
         average: Average,
-    ) -> Result<Tmp117<ADDR, T, E, OneShotMode>, Error> {
+    ) -> Result<Tmp117<ADDR, T, E, OneShotMode>, Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::OneShot);
@@ -257,7 +257,7 @@ where
     }
 
     /// Go to shotdown mode
-    pub fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, ShutdownMode>, Error> {
+    pub fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, ShutdownMode>, Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Shutdown);
@@ -272,7 +272,7 @@ where
     }
 
     /// Reset  the device
-    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, UnknownMode>, Error> {
+    pub fn reset(mut self) -> Result<Tmp117<ADDR, T, E, UnknownMode>, Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
@@ -287,7 +287,7 @@ where
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
-    pub fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error> {
+    pub fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error<E>> {
         self.wait_eeprom()?;
         self.tmp_ll
             .write(UEEPROM1::from(values[0]))
@@ -307,7 +307,7 @@ where
     }
 
     /// Read the data from the eeprom
-    pub fn read_eeprom(&mut self) -> Result<[u16; 3], Error> {
+    pub fn read_eeprom(&mut self) -> Result<[u16; 3], Error<E>> {
         let u1: UEEPROM1 = self.tmp_ll.read().map_err(Error::Bus)?;
         let u2: UEEPROM2 = self.tmp_ll.read().map_err(Error::Bus)?;
         let u3: UEEPROM3 = self.tmp_ll.read().map_err(Error::Bus)?;
@@ -322,7 +322,7 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Wait for data and read the temperature in celsius and goes to shutdown mode since it's a oneshot
-    pub fn wait_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error> {
+    pub fn wait_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error<E>> {
         self.wait_for_data()?;
 
         let val = self.read_temp_raw()?;
@@ -342,7 +342,7 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not ready
-    pub fn read_temp(&mut self) -> Result<f32, Error> {
+    pub fn read_temp(&mut self) -> Result<f32, Error<E>> {
         let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
@@ -352,18 +352,18 @@ where
     }
 
     /// Wait for the data to be ready and read the temperature in celsius
-    pub fn wait_temp(&mut self) -> Result<f32, Error> {
+    pub fn wait_temp(&mut self) -> Result<f32, Error<E>> {
         self.wait_for_data()?;
         self.read_temp_raw()
     }
 
     /// Check if an alert was triggered since the last calll
-    pub fn get_alert(&mut self) -> Result<Alert, Error> {
+    pub fn get_alert(&mut self) -> Result<Alert, Error<E>> {
         self.check_alert()
     }
 
     /// Wait for an alert to come and return it's value
-    pub fn wait_alert(&mut self) -> Result<Alert, Error> {
+    pub fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
         self.wait_for_alert()
     }
 }

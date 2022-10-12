@@ -3,7 +3,7 @@ use core::future::Future;
 
 use device_register::Register;
 use device_register_async::RegisterInterface;
-use embedded_hal::i2c::{ErrorKind, SevenBitAddress};
+use embedded_hal::i2c::SevenBitAddress;
 use embedded_hal_async::i2c::I2c;
 
 use crate::register::Address;
@@ -28,31 +28,30 @@ where
     }
 }
 
-impl<const ADDR: u8, T, E, R> RegisterInterface<R, Address, ErrorKind> for Tmp117LL<ADDR, T, E>
+impl<const ADDR: u8, T, E, R> RegisterInterface<R, Address> for Tmp117LL<ADDR, T, E>
 where
-    R: Register<Address = Address, Error = ErrorKind> + Clone + From<u16>,
+    R: Register<Address = Address> + Clone + From<u16>,
     u16: From<R>,
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
 {
-    type ReadOutput<'a> = impl Future<Output = Result<R, R::Error>>
+    type Error = E;
+
+    type ReadOutput<'a> = impl Future<Output = Result<R, Self::Error>>
     where
         Self: 'a ;
 
     fn read_register(&mut self) -> Self::ReadOutput<'_> {
         async {
             let mut buff = [0; 2];
-            self.i2c
-                .write(ADDR, &[R::ADDRESS.0])
-                .await
-                .map_err(|e| e.kind())?;
-            self.i2c.read(ADDR, &mut buff).await.map_err(|e| e.kind())?;
+            self.i2c.write(ADDR, &[R::ADDRESS.0]).await?;
+            self.i2c.read(ADDR, &mut buff).await?;
             let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
             Ok(val.into())
         }
     }
 
-    type WriteOutput<'a> = impl Future<Output = Result<(), R::Error>>
+    type WriteOutput<'a> = impl Future<Output = Result<(), Self::Error>>
     where
         Self: 'a,
         R: 'a;
@@ -65,7 +64,6 @@ where
             self.i2c
                 .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
                 .await
-                .map_err(|e| e.kind())
         }
     }
 }
