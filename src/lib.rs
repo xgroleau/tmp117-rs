@@ -322,6 +322,7 @@ where
     E: embedded_hal::i2c::Error,
 {
     /// Wait for data and read the temperature in celsius and goes to shutdown mode since it's a oneshot
+    #[allow(clippy::type_complexity)]
     pub fn wait_temp(mut self) -> Result<(f32, Tmp117<ADDR, T, E, ShutdownMode>), Error<E>> {
         self.wait_for_data()?;
 

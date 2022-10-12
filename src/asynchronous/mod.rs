@@ -22,31 +22,31 @@ impl ErrorType for DummyWait {
 impl Wait for DummyWait {
     type WaitForHighFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
 
-    fn wait_for_high<'a>(&'a mut self) -> Self::WaitForHighFuture<'a> {
+    fn wait_for_high(&'_ mut self) -> Self::WaitForHighFuture<'_> {
         async { todo!() }
     }
 
     type WaitForLowFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
 
-    fn wait_for_low<'a>(&'a mut self) -> Self::WaitForLowFuture<'a> {
+    fn wait_for_low(&'_ mut self) -> Self::WaitForLowFuture<'_> {
         async { todo!() }
     }
 
     type WaitForRisingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
 
-    fn wait_for_rising_edge<'a>(&'a mut self) -> Self::WaitForRisingEdgeFuture<'a> {
+    fn wait_for_rising_edge(&'_ mut self) -> Self::WaitForRisingEdgeFuture<'_> {
         async { todo!() }
     }
 
     type WaitForFallingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
 
-    fn wait_for_falling_edge<'a>(&'a mut self) -> Self::WaitForFallingEdgeFuture<'a> {
+    fn wait_for_falling_edge(&'_ mut self) -> Self::WaitForFallingEdgeFuture<'_> {
         async { todo!() }
     }
 
     type WaitForAnyEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
 
-    fn wait_for_any_edge<'a>(&'a mut self) -> Self::WaitForAnyEdgeFuture<'a> {
+    fn wait_for_any_edge(&'_ mut self) -> Self::WaitForAnyEdgeFuture<'_> {
         async { todo!() }
     }
 }
