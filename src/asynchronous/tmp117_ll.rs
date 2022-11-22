@@ -37,7 +37,7 @@ where
 {
     type Error = E;
 
-    type ReadOutput<'a> = impl Future<Output = Result<R, Self::Error>>
+    type ReadOutput<'a> = impl Future<Output = Result<R, Self::Error>> + 'a
     where
         Self: 'a ;
 
@@ -51,7 +51,7 @@ where
         }
     }
 
-    type WriteOutput<'a> = impl Future<Output = Result<(), Self::Error>>
+    type WriteOutput<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
     where
         Self: 'a,
         R: 'a;
