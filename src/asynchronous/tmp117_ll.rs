@@ -1,6 +1,4 @@
 //! Async low level driver of the tmp117
-use core::future::Future;
-
 use device_register::Register;
 use device_register_async::RegisterInterface;
 use embedded_hal::i2c::SevenBitAddress;
@@ -37,33 +35,20 @@ where
 {
     type Error = E;
 
-    type ReadOutput<'a> = impl Future<Output = Result<R, Self::Error>> + 'a
-    where
-        Self: 'a ;
-
-    fn read_register(&mut self) -> Self::ReadOutput<'_> {
-        async {
-            let mut buff = [0; 2];
-            self.i2c.write(ADDR, &[R::ADDRESS.0]).await?;
-            self.i2c.read(ADDR, &mut buff).await?;
-            let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
-            Ok(val.into())
-        }
+    async fn read_register(&mut self) -> Result<R, Self::Error> {
+        let mut buff = [0; 2];
+        self.i2c.write(ADDR, &[R::ADDRESS.0]).await?;
+        self.i2c.read(ADDR, &mut buff).await?;
+        let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
+        Ok(val.into())
     }
 
-    type WriteOutput<'a> = impl Future<Output = Result<(), Self::Error>> + 'a
-    where
-        Self: 'a,
-        R: 'a;
+    async fn write_register(&mut self, register: &R) -> Result<(), Self::Error> {
+        let val: u16 = register.clone().into();
+        let packet = val.to_be_bytes();
 
-    fn write_register<'a>(&'a mut self, register: &'a R) -> Self::WriteOutput<'a> {
-        async {
-            let val: u16 = register.clone().into();
-            let packet = val.to_be_bytes();
-
-            self.i2c
-                .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
-                .await
-        }
+        self.i2c
+            .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
+            .await
     }
 }

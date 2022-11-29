@@ -45,7 +45,8 @@
 //!
 #![no_std]
 #![no_main]
-#![feature(type_alias_impl_trait)]
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait, impl_trait_projections)]
 #![deny(unsafe_code, missing_docs)]
 
 use core::marker::PhantomData;

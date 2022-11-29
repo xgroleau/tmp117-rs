@@ -1,6 +1,6 @@
 //! Async drivers of the tmp117
 
-use core::{future::Future, marker::PhantomData};
+use core::marker::PhantomData;
 
 use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
@@ -20,34 +20,24 @@ impl ErrorType for DummyWait {
     type Error = ();
 }
 impl Wait for DummyWait {
-    type WaitForHighFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
-
-    fn wait_for_high(&'_ mut self) -> Self::WaitForHighFuture<'_> {
-        async { todo!() }
+    async fn wait_for_high(&'_ mut self) -> Result<(), Self::Error> {
+        todo!()
     }
 
-    type WaitForLowFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
-
-    fn wait_for_low(&'_ mut self) -> Self::WaitForLowFuture<'_> {
-        async { todo!() }
+    async fn wait_for_low(&'_ mut self) -> Result<(), Self::Error> {
+        todo!()
     }
 
-    type WaitForRisingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
-
-    fn wait_for_rising_edge(&'_ mut self) -> Self::WaitForRisingEdgeFuture<'_> {
-        async { todo!() }
+    async fn wait_for_rising_edge(&'_ mut self) -> Result<(), Self::Error> {
+        todo!()
     }
 
-    type WaitForFallingEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
-
-    fn wait_for_falling_edge(&'_ mut self) -> Self::WaitForFallingEdgeFuture<'_> {
-        async { todo!() }
+    async fn wait_for_falling_edge(&'_ mut self) -> Result<(), Self::Error> {
+        todo!()
     }
 
-    type WaitForAnyEdgeFuture<'a> = impl Future<Output = Result<(), Self::Error>> + 'a where Self: 'a;
-
-    fn wait_for_any_edge(&'_ mut self) -> Self::WaitForAnyEdgeFuture<'_> {
-        async { todo!() }
+    async fn wait_for_any_edge(&'_ mut self) -> Result<(), Self::Error> {
+        todo!()
     }
 }
 
@@ -171,9 +161,10 @@ where
             } else {
                 // If not, set it to data ready
                 self.tmp_ll
-                    .edit(|r: Configuration| {
-                        r.with_dr_alert(AlertPinSelect::DataReady)
-                            .with_polarity(Polarity::ActiveHigh)
+                    .edit(|r: &mut Configuration| {
+                        r.set_dr_alert(AlertPinSelect::DataReady);
+                        r.set_polarity(Polarity::ActiveHigh);
+                        r
                     })
                     .await
                     .map_err(Error::Bus)?;
@@ -206,9 +197,10 @@ where
             if let AlertPin::Alert(_) = p {
             } else {
                 self.tmp_ll
-                    .edit(|r: Configuration| {
-                        r.with_dr_alert(AlertPinSelect::Alert)
-                            .with_polarity(Polarity::ActiveHigh)
+                    .edit(|r: &mut Configuration| {
+                        r.set_dr_alert(AlertPinSelect::Alert);
+                        r.set_polarity(Polarity::ActiveHigh);
+                        r
                     })
                     .await
                     .map_err(Error::Bus)?;
@@ -237,7 +229,7 @@ where
         config: ContinousConfig,
     ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Error<E>> {
         self.tmp_ll
-            .edit(|mut r: Configuration| {
+            .edit(|r: &mut Configuration| {
                 r.set_polarity(Polarity::ActiveLow);
                 r.set_mode(ConversionMode::Continuous);
                 if let Some(val) = config.average {
@@ -276,10 +268,11 @@ where
         average: Average,
     ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Error<E>> {
         self.tmp_ll
-            .edit(|r: Configuration| {
-                r.with_polarity(Polarity::ActiveLow)
-                    .with_mode(ConversionMode::OneShot)
-                    .with_average(average)
+            .edit(|r: &mut Configuration| {
+                r.set_polarity(Polarity::ActiveLow);
+                r.set_mode(ConversionMode::OneShot);
+                r.set_average(average);
+                r
             })
             .await
             .map_err(Error::Bus)?;
@@ -294,7 +287,10 @@ where
     /// Go to shutdown mode
     pub async fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Error<E>> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_mode(ConversionMode::Shutdown))
+            .edit(|r: &mut Configuration| {
+                r.set_mode(ConversionMode::Shutdown);
+                r
+            })
             .await
             .map_err(Error::Bus)?;
 
@@ -308,7 +304,10 @@ where
     /// Reset  the device
     pub async fn reset(mut self) -> Result<Tmp117<ADDR, T, E, P, UnknownMode>, Error<E>> {
         self.tmp_ll
-            .edit(|r: Configuration| r.with_reset(true))
+            .edit(|r: &mut Configuration| {
+                r.set_reset(true);
+                r
+            })
             .await
             .map_err(Error::Bus)?;
 
