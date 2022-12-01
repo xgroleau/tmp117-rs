@@ -7,8 +7,8 @@ use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
 use embedded_hal_async::{digital::Wait, i2c::I2c};
 
 use crate::{
-    register::*, Alert, ContinousConfig, ContinuousMode, Error, OneShotMode, ShutdownMode,
-    UnknownMode, CELCIUS_CONVERSION,
+    register::*, Alert, ContinousConfig, ContinuousMode, Error, ErrorMode, OneShotMode,
+    ShutdownMode, UnknownMode, CELCIUS_CONVERSION,
 };
 
 use self::tmp117_ll::Tmp117LL;
@@ -63,21 +63,17 @@ impl<P> AlertPin<P> {
 
 /// The TMP117 driver. Note that the alert pin is optional, but it is recommended to pass it if possible
 /// If the alert pin is `None`, the driver will poll the config register instead of waiting for the pin.
-pub struct Tmp117<const ADDR: u8, T, E, P, M>
-where
-    T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
-    P: Wait,
-{
+pub struct Tmp117<const ADDR: u8, T, E, P, M> {
     tmp_ll: Tmp117LL<ADDR, T, E>,
     alert: Option<AlertPin<P>>,
     mode: PhantomData<M>,
+    err: Error<E>,
 }
 
 impl<const ADDR: u8, T, E> Tmp117<ADDR, T, E, DummyWait, UnknownMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
+    E: embedded_hal::i2c::Error + Copy,
 {
     /// Create a new tmp117 from a i2c bus
     pub fn new(i2c: T) -> Tmp117<ADDR, T, E, DummyWait, UnknownMode> {
@@ -85,6 +81,7 @@ where
             tmp_ll: Tmp117LL::new(i2c),
             alert: None,
             mode: PhantomData,
+            err: Error::AlertPin,
         }
     }
 }
@@ -92,7 +89,7 @@ where
 impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, UnknownMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
+    E: embedded_hal::i2c::Error + Copy,
     P: Wait,
 {
     /// Create a new tmp117 from a i2c bus and alert pin
@@ -101,6 +98,7 @@ where
             tmp_ll: Tmp117LL::new(i2c),
             alert: Some(AlertPin::Unkown(alert)),
             mode: PhantomData,
+            err: Error::AlertPin,
         }
     }
 
@@ -113,6 +111,7 @@ where
             tmp_ll,
             alert: Some(AlertPin::Unkown(alert)),
             mode: PhantomData,
+            err: Error::AlertPin,
         }
     }
 }
@@ -120,7 +119,7 @@ where
 impl<const ADDR: u8, T, E, P, M> Tmp117<ADDR, T, E, P, M>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
+    E: embedded_hal::i2c::Error + Copy,
     P: Wait,
 {
     async fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
@@ -223,12 +222,23 @@ where
         }
     }
 
-    /// Go to continuous mode
+    #[allow(clippy::wrong_self_convention)]
+    fn to_err(self, err: Error<E>) -> Tmp117<ADDR, T, E, P, ErrorMode> {
+        Tmp117::<ADDR, T, E, P, ErrorMode> {
+            tmp_ll: self.tmp_ll,
+            alert: self.alert,
+            mode: PhantomData,
+            err,
+        }
+    }
+
+    /// Go to continuous mode and allow data to be gathered continuously
     pub async fn to_continuous(
         mut self,
         config: ContinousConfig,
-    ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Error<E>> {
-        self.tmp_ll
+    ) -> Result<Tmp117<ADDR, T, E, P, ContinuousMode>, Tmp117<ADDR, T, E, P, ErrorMode>> {
+        let res = self
+            .tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_polarity(Polarity::ActiveLow);
                 r.set_mode(ConversionMode::Continuous);
@@ -241,24 +251,36 @@ where
                 r
             })
             .await
-            .map_err(Error::Bus)?;
+            .map_err(Error::Bus);
+
+        if let Err(e) = res {
+            return Err(self.to_err(e));
+        }
+
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(high).await.map_err(Error::Bus)?;
+            if let Err(e) = self.tmp_ll.write(high).await.map_err(Error::Bus) {
+                return Err(self.to_err(e));
+            }
         }
         if let Some(val) = config.low {
             let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(low).await.map_err(Error::Bus)?;
+            if let Err(e) = self.tmp_ll.write(low).await.map_err(Error::Bus) {
+                return Err(self.to_err(e));
+            }
         }
         if let Some(val) = config.offset {
             let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(off).await.map_err(Error::Bus)?;
+            if let Err(e) = self.tmp_ll.write(off).await.map_err(Error::Bus) {
+                return Err(self.to_err(e));
+            }
         }
 
         Ok(Tmp117::<ADDR, T, E, P, ContinuousMode> {
             tmp_ll: self.tmp_ll,
             alert: self.alert,
             mode: PhantomData,
+            err: self.err,
         })
     }
 
@@ -266,8 +288,9 @@ where
     pub async fn to_oneshot(
         mut self,
         average: Average,
-    ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Error<E>> {
-        self.tmp_ll
+    ) -> Result<Tmp117<ADDR, T, E, P, OneShotMode>, Tmp117<ADDR, T, E, P, ErrorMode>> {
+        let res = self
+            .tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_polarity(Polarity::ActiveLow);
                 r.set_mode(ConversionMode::OneShot);
@@ -275,47 +298,65 @@ where
                 r
             })
             .await
-            .map_err(Error::Bus)?;
+            .map_err(Error::Bus);
 
-        Ok(Tmp117::<ADDR, T, E, P, OneShotMode> {
-            tmp_ll: self.tmp_ll,
-            alert: self.alert,
-            mode: PhantomData,
-        })
+        match res {
+            Ok(_) => Ok(Tmp117::<ADDR, T, E, P, OneShotMode> {
+                tmp_ll: self.tmp_ll,
+                alert: self.alert,
+                mode: PhantomData,
+                err: self.err,
+            }),
+            Err(e) => Err(self.to_err(e)),
+        }
     }
 
     /// Go to shutdown mode
-    pub async fn to_shutdown(mut self) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Error<E>> {
-        self.tmp_ll
+    pub async fn to_shutdown(
+        mut self,
+    ) -> Result<Tmp117<ADDR, T, E, P, ShutdownMode>, Tmp117<ADDR, T, E, P, ErrorMode>> {
+        let res = self
+            .tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Shutdown);
                 r
             })
             .await
-            .map_err(Error::Bus)?;
+            .map_err(Error::Bus);
 
-        Ok(Tmp117::<ADDR, T, E, P, ShutdownMode> {
-            tmp_ll: self.tmp_ll,
-            alert: self.alert,
-            mode: PhantomData,
-        })
+        match res {
+            Ok(_) => Ok(Tmp117::<ADDR, T, E, P, ShutdownMode> {
+                tmp_ll: self.tmp_ll,
+                alert: self.alert,
+                mode: PhantomData,
+                err: self.err,
+            }),
+            Err(e) => Err(self.to_err(e)),
+        }
     }
 
     /// Reset  the device
-    pub async fn reset(mut self) -> Result<Tmp117<ADDR, T, E, P, UnknownMode>, Error<E>> {
-        self.tmp_ll
+    pub async fn reset(
+        mut self,
+    ) -> Result<Tmp117<ADDR, T, E, P, UnknownMode>, Tmp117<ADDR, T, E, P, ErrorMode>> {
+        let res = self
+            .tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
                 r
             })
             .await
-            .map_err(Error::Bus)?;
+            .map_err(Error::Bus);
 
-        Ok(Tmp117::<ADDR, T, E, P, UnknownMode> {
-            tmp_ll: self.tmp_ll,
-            alert: self.alert,
-            mode: PhantomData,
-        })
+        match res {
+            Ok(_) => Ok(Tmp117::<ADDR, T, E, P, UnknownMode> {
+                tmp_ll: self.tmp_ll,
+                alert: self.alert,
+                mode: PhantomData,
+                err: self.err,
+            }),
+            Err(e) => Err(self.to_err(e)),
+        }
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
@@ -351,34 +392,61 @@ where
     }
 }
 
+impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, ErrorMode>
+where
+    T: I2c<SevenBitAddress, Error = E>,
+    E: embedded_hal::i2c::Error + Copy,
+    P: Wait,
+{
+    /// Return the error that caused the driver to go in error state
+    pub fn err(&self) -> Error<E> {
+        self.err
+    }
+}
+
+impl<const ADDR: u8, T, E, P> core::fmt::Debug for Tmp117<ADDR, T, E, P, ErrorMode>
+where
+    E: core::fmt::Debug,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Tmp117").field("err", &self.err).finish()
+    }
+}
+
 impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, OneShotMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
+    E: embedded_hal::i2c::Error + Copy,
     P: Wait,
 {
     /// Wait for data and read the temperature in celsius and goes to shutdown mode since it's a oneshot
     pub async fn wait_temp(
         mut self,
-    ) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Error<E>> {
-        self.wait_for_data().await?;
+    ) -> Result<(f32, Tmp117<ADDR, T, E, P, ShutdownMode>), Tmp117<ADDR, T, E, P, ErrorMode>> {
+        if let Err(e) = self.wait_for_data().await {
+            return Err(self.to_err(e));
+        }
 
-        let val = self.read_temp_raw().await?;
-        Ok((
-            val,
-            Tmp117::<ADDR, T, E, P, ShutdownMode> {
-                tmp_ll: self.tmp_ll,
-                alert: self.alert,
-                mode: PhantomData,
-            },
-        ))
+        let res = self.read_temp_raw().await;
+        match res {
+            Ok(val) => Ok((
+                val,
+                Tmp117::<ADDR, T, E, P, ShutdownMode> {
+                    tmp_ll: self.tmp_ll,
+                    alert: self.alert,
+                    mode: PhantomData,
+                    err: self.err,
+                },
+            )),
+            Err(e) => Err(self.to_err(e)),
+        }
     }
 }
 
 impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P, ContinuousMode>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
+    E: embedded_hal::i2c::Error + Copy,
     P: Wait,
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not valid

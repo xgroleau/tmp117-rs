@@ -1,16 +1,15 @@
 //! The low level driver of the TPM117
+use core::marker::PhantomData;
+
 use device_register::{Register, RegisterInterface};
 use embedded_hal::i2c::{I2c, SevenBitAddress};
 
 use crate::register::Address;
 
 /// The low level driver of the TPM117. Allows to read, write and edit the registers directly via the i2c bus
-pub struct Tmp117LL<const ADDR: u8, T, E>
-where
-    T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error,
-{
+pub struct Tmp117LL<const ADDR: u8, T, E> {
     i2c: T,
+    e: PhantomData<E>,
 }
 
 impl<const ADDR: u8, T, E> Tmp117LL<ADDR, T, E>
@@ -20,7 +19,10 @@ where
 {
     /// Creates a new instace of the Tmp117 from an i2c bus
     pub fn new(i2c: T) -> Self {
-        Self { i2c }
+        Self {
+            i2c,
+            e: PhantomData,
+        }
     }
 }
 
