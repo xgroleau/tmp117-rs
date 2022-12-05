@@ -118,7 +118,7 @@ pub enum Conversion {
 #[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
 #[bits = 2]
 pub enum ConversionMode {
-    /// Continous conversion mode
+    /// Continuous conversion mode
     Continuous = 0b0,
 
     /// Shutdown conversion mode
