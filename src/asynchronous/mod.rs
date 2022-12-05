@@ -211,7 +211,7 @@ where
     async fn to_continuous<'a>(
         &'a mut self,
         config: ContinuousConfig,
-    ) -> Result<ContinuousHandler<'a, ADDR, T, E, P>, Error<E>> {
+    ) -> Result<ContinuousHandler<ADDR, T, E, P>, Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_polarity(Polarity::ActiveLow);
@@ -320,14 +320,14 @@ where
     /// Pass a config and closure for the continuous mode.
     /// The device gets set to continuous, then the function is called with the handler
     /// and finally the device is shutdown
-    pub async fn continuous<'a, 'b, F, Fut>(
-        &'a mut self,
+    /// A pointer is passed since lifetime cannot be described for async closure in this situation
+    pub async fn continuous<F, Fut>(
+        &mut self,
         config: ContinuousConfig,
         f: F,
     ) -> Result<(), Error<E>>
     where
-        'a: 'b,
-        F: FnOnce(*mut ContinuousHandler<'b, ADDR, T, E, P>) -> Fut,
+        F: FnOnce(*mut ContinuousHandler<ADDR, T, E, P>) -> Fut,
         Fut: Future<Output = Result<(), Error<E>>>,
     {
         let mut continuous = self.to_continuous(config).await?;
@@ -337,11 +337,11 @@ where
 }
 
 /// Handler for the continuous mode
-pub struct ContinuousHandler<'a, const ADDR: u8, T, E, P> {
-    tmp117: &'a mut Tmp117<ADDR, T, E, P>,
+pub struct ContinuousHandler<const ADDR: u8, T, E, P> {
+    tmp117: *mut Tmp117<ADDR, T, E, P>,
 }
 
-impl<'a, const ADDR: u8, T, E, P> ContinuousHandler<'a, ADDR, T, E, P>
+impl<'a, const ADDR: u8, T, E, P> ContinuousHandler<ADDR, T, E, P>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error + Copy,
@@ -349,27 +349,31 @@ where
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not valid
     pub async fn read_temp(&mut self) -> Result<f32, Error<E>> {
-        let config: Configuration = self.tmp117.tmp_ll.read().await.map_err(Error::Bus)?;
+        let tmp117 = unsafe { &mut *self.tmp117 };
+        let config: Configuration = tmp117.tmp_ll.read().await.map_err(Error::Bus)?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
         }
 
-        self.tmp117.read_temp_raw().await
+        tmp117.read_temp_raw().await
     }
 
     /// Wait for the data to be ready and read the temperature in celsius
     pub async fn wait_temp(&mut self) -> Result<f32, Error<E>> {
-        self.tmp117.wait_for_data().await?;
-        self.tmp117.read_temp_raw().await
+        let tmp117 = unsafe { &mut *self.tmp117 };
+        tmp117.wait_for_data().await?;
+        tmp117.read_temp_raw().await
     }
 
     /// Check if an alert was triggered since the last calll
     pub async fn get_alert(&mut self) -> Result<Alert, Error<E>> {
-        self.tmp117.check_alert().await
+        let tmp117 = unsafe { &mut *self.tmp117 };
+        tmp117.check_alert().await
     }
 
     /// Wait for an alert to come and return it's value
     pub async fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
-        self.tmp117.wait_for_alert().await
+        let tmp117 = unsafe { &mut *self.tmp117 };
+        tmp117.wait_for_alert().await
     }
 }

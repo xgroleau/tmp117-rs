@@ -46,7 +46,7 @@
 #![allow(incomplete_features)]
 #![feature(async_fn_in_trait, impl_trait_projections)]
 #![feature(type_alias_impl_trait)]
-#![deny(unsafe_code, missing_docs)]
+#![deny(missing_docs)]
 
 use device_register::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::i2c::{I2c, SevenBitAddress};
