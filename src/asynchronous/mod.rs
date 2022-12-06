@@ -327,16 +327,20 @@ where
         f: F,
     ) -> Result<(), Error<E>>
     where
-        F: FnOnce(*mut ContinuousHandler<ADDR, T, E, P>) -> Fut,
+        F: FnOnce(ContinuousHandler<ADDR, T, E, P>) -> Fut,
         Fut: Future<Output = Result<(), Error<E>>>,
     {
-        let mut continuous = self.to_continuous(config).await?;
-        f(&mut continuous).await?;
+        let continuous = self.to_continuous(config).await?;
+        f(continuous).await?;
         self.to_shutdown().await
     }
 }
 
 /// Handler for the continuous mode
+///
+/// # Safety
+/// Note that it is only safe to use in the [Tmp117::continuous] closure since
+/// it uses a pointer to the tmp117 to circuvent issues with async closure lifetime
 pub struct ContinuousHandler<const ADDR: u8, T, E, P> {
     tmp117: *mut Tmp117<ADDR, T, E, P>,
 }

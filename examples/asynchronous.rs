@@ -24,8 +24,7 @@ async fn main(_spawner: Spawner) {
     info!("Temperature {}", temperature);
 
     info!("Using continuous mode");
-    tmp.continuous(Default::default(), |t| async move {
-        let t = unsafe { &mut *t };
+    tmp.continuous(Default::default(), |mut t| async move {
         for _ in 0..10 {
             let temp = t.wait_temp().await?;
             info!("Temperature {}", temp);
