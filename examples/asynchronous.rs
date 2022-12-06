@@ -5,7 +5,7 @@
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_nrf::{interrupt, twim::Twim};
-use tmp117::{asynchronous::Tmp117, register::Average, ContinuousMode, OneShotMode, ShutdownMode};
+use tmp117::{asynchronous::Tmp117, register::Average};
 use {defmt_rtt as _, embassy_nrf as _, panic_probe as _};
 
 #[embassy_executor::main]
@@ -16,28 +16,23 @@ async fn main(_spawner: Spawner) {
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
     let twi = Twim::new(p.TWISPI0, irq, p.P1_10, p.P1_11, Default::default());
 
-    let tmp = Tmp117::<0x49, _, _, _, _>::new(twi);
+    let mut tmp = Tmp117::<0x49, _, _, _>::new(twi);
 
     // Read and goes to shutdown mode
-    info!("Transition to one shot");
-    let tmp: Tmp117<0x49, _, _, _, OneShotMode> = tmp.to_oneshot(Average::NoAverage).await.unwrap();
-
-    info!("Reading temp");
-    let (temperature, tmp) = tmp.wait_temp().await.unwrap();
-    // Verify type
-    let tmp: Tmp117<0x49, _, _, _, ShutdownMode> = tmp;
+    info!("Reading temp once");
+    let temperature = tmp.oneshot(Average::NoAverage).await.unwrap();
     info!("Temperature {}", temperature);
 
-    info!("To continuous");
-    let mut tmp: Tmp117<0x49, _, _, _, ContinuousMode> =
-        tmp.to_continuous(Default::default()).await.unwrap();
-
-    for _ in 0..10 {
-        let temp = tmp.wait_temp().await.unwrap();
-        info!("Temperature {}", temp);
-    }
-
-    let mut tmp: Tmp117<0x49, _, _, _, ShutdownMode> = tmp.to_shutdown().await.unwrap();
+    info!("Using continuous mode");
+    tmp.continuous(Default::default(), |mut t| async move {
+        for _ in 0..10 {
+            let temp = t.wait_temp().await?;
+            info!("Temperature {}", temp);
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
 
     let mut eeprom_data = tmp.read_eeprom().await.unwrap();
     info!("Eeprom data before: {}", eeprom_data);
