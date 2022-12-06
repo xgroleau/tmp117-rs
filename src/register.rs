@@ -73,6 +73,12 @@ pub enum Average {
     Avg64 = 3,
 }
 
+impl Default for Average {
+    fn default() -> Self {
+        Self::NoAverage
+    }
+}
+
 /// Conversion cycle. It depends on the average selected. The enum represents the values for no average.
 /// | CONV      | AVG = 00      | AVG = 01      | AVG = 10      | AVG = 11      |
 /// |-----------|---------------|---------------|---------------|---------------|
@@ -111,6 +117,11 @@ pub enum Conversion {
 
     /// 16000ms cycle time without average.
     Ms16000 = 7,
+}
+impl Default for Conversion {
+    fn default() -> Self {
+        Self::Ms15_5
+    }
 }
 
 /// Conversion mode
@@ -229,7 +240,7 @@ pub struct EEPROM {
     #[skip(setters)]
     pub busy: bool,
 
-    /// If the eeprom is unlock. If unlcoked, any writes to the registers program will be written to the eeprom
+    /// If the eeprom is unlock. If unlocked, any writes to the registers program will be written to the eeprom
     pub unlock: bool,
 }
 

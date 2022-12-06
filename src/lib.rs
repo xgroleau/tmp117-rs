@@ -9,9 +9,8 @@
 //! ```no_run
 //! // Pass the address of the tmp device
 //! let tmp = Tmp117::<0x49, _, _, _>::new(spi);
-//!
-//! // Transition to oneshot mode, get value and shuts down
-//! let tmp_one = tmp.oneshot(Average::NoAverage).unwrap();
+//! let delay = Delay;
+//! tmp.reset(delay).unwrap();
 //!
 //! // Transition to continuous mode and shutdown after the closure
 //! let mut tmp_cont = tmp.continuous(Default::default(), |t| {
@@ -49,7 +48,10 @@
 #![deny(missing_docs)]
 
 use device_register::{EditRegister, ReadRegister, WriteRegister};
-use embedded_hal::i2c::{I2c, SevenBitAddress};
+use embedded_hal::{
+    delay::DelayUs,
+    i2c::{I2c, SevenBitAddress},
+};
 pub use error::Error;
 pub use modular_bitfield::Specifier;
 use register::*;
@@ -79,10 +81,10 @@ pub enum Alert {
 #[derive(Default)]
 pub struct ContinuousConfig {
     /// The average used, will use the one stored in the register if None
-    pub average: Option<Average>,
+    pub average: Average,
 
     /// The convesion used, will use the one stored in the register if None
-    pub conversion: Option<Conversion>,
+    pub conversion: Conversion,
 
     /// The high alert used, will use the one stored in the register if None
     pub high: Option<f32>,
@@ -176,18 +178,6 @@ where
         &'a mut self,
         config: ContinuousConfig,
     ) -> Result<ContinuousHandler<'a, ADDR, T, E>, Error<E>> {
-        self.tmp_ll
-            .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::Continuous);
-                if let Some(val) = config.average {
-                    r.set_average(val);
-                }
-                if let Some(val) = config.conversion {
-                    r.set_conversion(val);
-                }
-                r
-            })
-            .map_err(Error::Bus)?;
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
             self.tmp_ll.write(high).map_err(Error::Bus)?;
@@ -200,36 +190,56 @@ where
             let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
             self.tmp_ll.write(off).map_err(Error::Bus)?;
         }
+
+        let config = Configuration::new()
+            .with_mode(ConversionMode::Continuous)
+            .with_average(config.average)
+            .with_conversion(config.conversion);
+
+        self.tmp_ll
+            .edit(|r: &mut Configuration| {
+                *r = config;
+                r
+            })
+            .map_err(Error::Bus)?;
+
         Ok(ContinuousHandler { tmp117: self })
     }
 
     fn to_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
+        let config = Configuration::new()
+            .with_mode(ConversionMode::OneShot)
+            .with_average(average);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::OneShot);
-                r.set_average(average);
+                *r = config;
                 r
             })
             .map_err(Error::Bus)
     }
 
     fn to_shutdown(&mut self) -> Result<(), Error<E>> {
+        let config = Configuration::new().with_mode(ConversionMode::Shutdown);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::Shutdown);
+                *r = config;
                 r
             })
             .map_err(Error::Bus)
     }
 
     /// Resets the device and put it in shutdown
-    pub fn reset(&mut self) -> Result<(), Error<E>> {
+    pub fn reset<D>(&mut self, mut delay: D) -> Result<(), Error<E>>
+    where
+        D: DelayUs,
+    {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
                 r
             })
             .map_err(Error::Bus)?;
+        delay.delay_ms(2).map_err(|_| Error::Delay)?;
         self.to_shutdown()
     }
 

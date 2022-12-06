@@ -12,4 +12,7 @@ pub enum Error<E> {
 
     /// Alert pin error
     AlertPin,
+
+    /// Delay error
+    Delay,
 }

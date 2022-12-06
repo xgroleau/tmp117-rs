@@ -4,7 +4,7 @@ use core::future::Future;
 
 use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
-use embedded_hal_async::{digital::Wait, i2c::I2c};
+use embedded_hal_async::{delay::DelayUs, digital::Wait, i2c::I2c};
 
 use crate::{register::*, Alert, ContinuousConfig, Error, CELCIUS_CONVERSION};
 
@@ -212,42 +212,43 @@ where
         &'a mut self,
         config: ContinuousConfig,
     ) -> Result<ContinuousHandler<ADDR, T, E, P>, Error<E>> {
+        if let Some(val) = config.high {
+            let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(high).await.map_err(Error::Bus)?;
+        }
+        if let Some(val) = config.low {
+            let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(low).await.map_err(Error::Bus)?;
+        }
+        if let Some(val) = config.offset {
+            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
+            self.tmp_ll.write(off).await.map_err(Error::Bus)?;
+        }
+
+        let config = Configuration::new()
+            .with_mode(ConversionMode::Continuous)
+            .with_polarity(Polarity::ActiveLow)
+            .with_average(config.average)
+            .with_conversion(config.conversion);
+
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                r.set_polarity(Polarity::ActiveLow);
-                r.set_mode(ConversionMode::Continuous);
-                if let Some(val) = config.average {
-                    r.set_average(val);
-                }
-                if let Some(val) = config.conversion {
-                    r.set_conversion(val);
-                }
+                *r = config;
                 r
             })
             .await
             .map_err(Error::Bus)?;
-
-        if let Some(val) = config.high {
-            let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(high).await.map_err(Error::Bus)?;
-            if let Some(val) = config.low {
-                let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-                self.tmp_ll.write(low).await.map_err(Error::Bus)?;
-            }
-            if let Some(val) = config.offset {
-                let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
-                self.tmp_ll.write(off).await.map_err(Error::Bus)?;
-            }
-        }
         Ok(ContinuousHandler { tmp117: self })
     }
 
     async fn to_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
+        let config = Configuration::new()
+            .with_mode(ConversionMode::OneShot)
+            .with_polarity(Polarity::ActiveLow)
+            .with_average(average);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                r.set_polarity(Polarity::ActiveLow);
-                r.set_mode(ConversionMode::OneShot);
-                r.set_average(average);
+                *r = config;
                 r
             })
             .await
@@ -255,9 +256,10 @@ where
     }
 
     async fn to_shutdown(&mut self) -> Result<(), Error<E>> {
+        let config = Configuration::new().with_mode(ConversionMode::Shutdown);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::Shutdown);
+                *r = config;
                 r
             })
             .await
@@ -265,7 +267,10 @@ where
     }
 
     /// Resets the device and put it in shutdown
-    pub async fn reset(&mut self) -> Result<(), Error<E>> {
+    pub async fn reset<D>(&mut self, mut delay: D) -> Result<(), Error<E>>
+    where
+        D: DelayUs,
+    {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
@@ -273,6 +278,7 @@ where
             })
             .await
             .map_err(Error::Bus)?;
+        delay.delay_ms(2).await.map_err(|_| Error::Delay)?;
         self.to_shutdown().await
     }
 
