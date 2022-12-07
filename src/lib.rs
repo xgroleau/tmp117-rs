@@ -99,6 +99,8 @@ pub struct ContinuousConfig {
     pub offset: Option<f32>,
 }
 /// Represents the ID of the device.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Id {
     /// Should always be 0x117
     pub device: u16,
