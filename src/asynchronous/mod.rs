@@ -6,7 +6,7 @@ use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
 use embedded_hal_async::{delay::DelayUs, digital::Wait, i2c::I2c};
 
-use crate::{register::*, Alert, ContinuousConfig, Error, CELCIUS_CONVERSION};
+use crate::{register::*, Alert, ContinuousConfig, Error, Id, CELCIUS_CONVERSION};
 
 use self::tmp117_ll::Tmp117LL;
 pub mod tmp117_ll;
@@ -109,6 +109,15 @@ where
         }
     }
 
+    /// Returns the ID of the device
+    pub async fn id(&mut self) -> Result<Id, Error<E>> {
+        let id: DeviceID = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        Ok(Id {
+            device: id.device_id(),
+            revision: id.revision(),
+        })
+    }
+
     async fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
         let mut configuration: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
         while configuration.eeprom_busy() {
@@ -208,8 +217,8 @@ where
         }
     }
 
-    async fn to_continuous<'a>(
-        &'a mut self,
+    async fn set_continuous(
+        &mut self,
         config: ContinuousConfig,
     ) -> Result<ContinuousHandler<ADDR, T, E, P>, Error<E>> {
         if let Some(val) = config.high {
@@ -241,7 +250,7 @@ where
         Ok(ContinuousHandler { tmp117: self })
     }
 
-    async fn to_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
+    async fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
         let config = Configuration::new()
             .with_mode(ConversionMode::OneShot)
             .with_polarity(Polarity::ActiveLow)
@@ -255,7 +264,7 @@ where
             .map_err(Error::Bus)
     }
 
-    async fn to_shutdown(&mut self) -> Result<(), Error<E>> {
+    async fn set_shutdown(&mut self) -> Result<(), Error<E>> {
         let config = Configuration::new().with_mode(ConversionMode::Shutdown);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
@@ -279,7 +288,7 @@ where
             .await
             .map_err(Error::Bus)?;
         delay.delay_ms(2).await.map_err(|_| Error::Delay)?;
-        self.to_shutdown().await
+        self.set_shutdown().await
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
@@ -316,7 +325,7 @@ where
 
     /// Wait for data and read the temperature in celsius and goes to shutdown since it's a oneshot
     pub async fn oneshot(&mut self, average: Average) -> Result<f32, Error<E>> {
-        self.to_oneshot(average).await?;
+        self.set_oneshot(average).await?;
         self.wait_for_data().await?;
 
         let res = self.read_temp_raw().await?;
@@ -336,9 +345,9 @@ where
         F: FnOnce(ContinuousHandler<ADDR, T, E, P>) -> Fut,
         Fut: Future<Output = Result<(), Error<E>>>,
     {
-        let continuous = self.to_continuous(config).await?;
+        let continuous = self.set_continuous(config).await?;
         f(continuous).await?;
-        self.to_shutdown().await
+        self.set_shutdown().await
     }
 }
 

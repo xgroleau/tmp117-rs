@@ -62,6 +62,9 @@ pub mod error;
 pub mod register;
 pub mod tmp117_ll;
 
+/// Conversion factor used by the device. One lsb is this value
+pub const CELCIUS_CONVERSION: f32 = 0.0078125;
+
 /// The types of alerts possible
 pub enum Alert {
     /// No alert were triggered
@@ -95,9 +98,13 @@ pub struct ContinuousConfig {
     /// The temperature offset used, will use 0 if None
     pub offset: Option<f32>,
 }
-
-/// Conversion factor used by the device. One lsb is this value
-pub const CELCIUS_CONVERSION: f32 = 0.0078125;
+/// Represents the ID of the device.
+pub struct Id {
+    /// Should always be 0x117
+    pub device: u16,
+    /// Depends on the revision of the device
+    pub revision: u8,
+}
 
 /// The TMP117 driver. Note that the alert pin is not used in this driver,
 /// see the async implementation if you want the driver to use the alert pin in the drive
@@ -120,6 +127,15 @@ where
     /// Create a new tmp117 from a low level tmp117 driver
     pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>) -> Self {
         Tmp117::<ADDR, T, E> { tmp_ll }
+    }
+
+    /// Returns the ID of the device
+    pub fn id(&mut self) -> Result<Id, Error<E>> {
+        let id: DeviceID = self.tmp_ll.read().map_err(Error::Bus)?;
+        Ok(Id {
+            device: id.device_id(),
+            revision: id.revision(),
+        })
     }
 
     fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
@@ -174,10 +190,10 @@ where
         }
     }
 
-    fn to_continuous<'a>(
-        &'a mut self,
+    fn set_continuous(
+        &mut self,
         config: ContinuousConfig,
-    ) -> Result<ContinuousHandler<'a, ADDR, T, E>, Error<E>> {
+    ) -> Result<ContinuousHandler<'_, ADDR, T, E>, Error<E>> {
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
             self.tmp_ll.write(high).map_err(Error::Bus)?;
@@ -206,7 +222,7 @@ where
         Ok(ContinuousHandler { tmp117: self })
     }
 
-    fn to_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
+    fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
         let config = Configuration::new()
             .with_mode(ConversionMode::OneShot)
             .with_average(average);
@@ -218,7 +234,7 @@ where
             .map_err(Error::Bus)
     }
 
-    fn to_shutdown(&mut self) -> Result<(), Error<E>> {
+    fn set_shutdown(&mut self) -> Result<(), Error<E>> {
         let config = Configuration::new().with_mode(ConversionMode::Shutdown);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
@@ -240,7 +256,7 @@ where
             })
             .map_err(Error::Bus)?;
         delay.delay_ms(2).map_err(|_| Error::Delay)?;
-        self.to_shutdown()
+        self.set_shutdown()
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
@@ -274,7 +290,7 @@ where
 
     /// Wait for data and read the temperature in celsius and shutdown since it's a oneshot
     pub fn oneshot(&mut self, average: Average) -> Result<f32, Error<E>> {
-        self.to_oneshot(average)?;
+        self.set_oneshot(average)?;
         self.wait_for_data()?;
         let data = self.read_temp_raw()?;
         Ok(data)
@@ -287,9 +303,9 @@ where
     where
         F: FnOnce(ContinuousHandler<'_, ADDR, T, E>) -> Result<(), Error<E>>,
     {
-        let handler = self.to_continuous(config)?;
+        let handler = self.set_continuous(config)?;
         f(handler)?;
-        self.to_shutdown()
+        self.set_shutdown()
     }
 }
 
