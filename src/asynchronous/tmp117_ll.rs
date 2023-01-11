@@ -38,10 +38,11 @@ where
     type Error = E;
 
     async fn read_register(&mut self) -> Result<R, Self::Error> {
-        let mut buff = [0; 2];
-        self.i2c.write(ADDR, &[R::ADDRESS.0]).await?;
-        self.i2c.read(ADDR, &mut buff).await?;
-        let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
+        let mut buff = [0; 3];
+        self.i2c
+            .write_read(ADDR, &[R::ADDRESS.0], &mut buff)
+            .await?;
+        let val = u16::from_be_bytes(buff[1..3].try_into().unwrap());
         Ok(val.into())
     }
 
