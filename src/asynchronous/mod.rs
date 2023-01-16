@@ -159,7 +159,6 @@ where
                     .edit(|r: &mut Configuration| {
                         r.set_dr_alert(AlertPinSelect::DataReady);
                         r.set_polarity(Polarity::ActiveHigh);
-                        r
                     })
                     .await
                     .map_err(Error::Bus)?;
@@ -194,7 +193,6 @@ where
                     .edit(|r: &mut Configuration| {
                         r.set_dr_alert(AlertPinSelect::Alert);
                         r.set_polarity(Polarity::ActiveHigh);
-                        r
                     })
                     .await
                     .map_err(Error::Bus)?;
@@ -243,7 +241,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .await
             .map_err(Error::Bus)?;
@@ -258,7 +255,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .await
             .map_err(Error::Bus)
@@ -269,7 +265,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .await
             .map_err(Error::Bus)
@@ -283,7 +278,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
-                r
             })
             .await
             .map_err(Error::Bus)?;

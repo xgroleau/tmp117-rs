@@ -217,7 +217,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .map_err(Error::Bus)?;
 
@@ -231,7 +230,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .map_err(Error::Bus)
     }
@@ -241,7 +239,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 *r = config;
-                r
             })
             .map_err(Error::Bus)
     }
@@ -254,7 +251,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
-                r
             })
             .map_err(Error::Bus)?;
         delay.delay_ms(2).map_err(|_| Error::Delay)?;
