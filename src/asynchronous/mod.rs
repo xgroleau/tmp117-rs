@@ -232,15 +232,12 @@ where
             self.tmp_ll.write(off).await.map_err(Error::Bus)?;
         }
 
-        let config = Configuration::new()
-            .with_mode(ConversionMode::Continuous)
-            .with_polarity(Polarity::ActiveLow)
-            .with_average(config.average)
-            .with_conversion(config.conversion);
-
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                *r = config;
+                r.set_mode(ConversionMode::Continuous);
+                r.set_polarity(Polarity::ActiveLow);
+                r.set_average(config.average);
+                r.set_conversion(config.conversion);
             })
             .await
             .map_err(Error::Bus)?;
@@ -248,23 +245,20 @@ where
     }
 
     async fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
-        let config = Configuration::new()
-            .with_mode(ConversionMode::OneShot)
-            .with_polarity(Polarity::ActiveLow)
-            .with_average(average);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                *r = config;
+                r.set_mode(ConversionMode::OneShot);
+                r.set_polarity(Polarity::ActiveLow);
+                r.set_average(average);
             })
             .await
             .map_err(Error::Bus)
     }
 
     async fn set_shutdown(&mut self) -> Result<(), Error<E>> {
-        let config = Configuration::new().with_mode(ConversionMode::Shutdown);
         self.tmp_ll
             .edit(|r: &mut Configuration| {
-                *r = config;
+                r.set_mode(ConversionMode::Shutdown);
             })
             .await
             .map_err(Error::Bus)
