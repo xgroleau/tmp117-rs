@@ -165,7 +165,7 @@ where
             }
             // Wait for it to go high
             p.borrow_mut()
-                .wait_for_low()
+                .wait_for_high()
                 .await
                 .map_err(|_| Error::AlertPin)?;
             self.alert = self.alert.take().map(|v| AlertPin::DataReady(v.unwrap()));
