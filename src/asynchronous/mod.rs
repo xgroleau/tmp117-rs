@@ -158,14 +158,14 @@ where
                 self.tmp_ll
                     .edit(|r: &mut Configuration| {
                         r.set_dr_alert(AlertPinSelect::DataReady);
-                        r.set_polarity(Polarity::ActiveHigh);
+                        r.set_polarity(Polarity::ActiveLow);
                     })
                     .await
                     .map_err(Error::Bus)?;
             }
             // Wait for it to go high
             p.borrow_mut()
-                .wait_for_high()
+                .wait_for_low()
                 .await
                 .map_err(|_| Error::AlertPin)?;
             self.alert = self.alert.take().map(|v| AlertPin::DataReady(v.unwrap()));
@@ -192,13 +192,13 @@ where
                 self.tmp_ll
                     .edit(|r: &mut Configuration| {
                         r.set_dr_alert(AlertPinSelect::Alert);
-                        r.set_polarity(Polarity::ActiveHigh);
+                        r.set_polarity(Polarity::ActiveLow);
                     })
                     .await
                     .map_err(Error::Bus)?;
             }
             p.borrow_mut()
-                .wait_for_high()
+                .wait_for_low()
                 .await
                 .map_err(|_| Error::AlertPin)?;
             self.alert = self.alert.take().map(|v| AlertPin::Alert(v.unwrap()));
