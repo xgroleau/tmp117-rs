@@ -240,7 +240,7 @@ where
     }
 
     /// Resets the device and put it in shutdown
-    pub fn reset<D>(&mut self, mut delay: D) -> Result<(), Error<E>>
+    pub fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<E>>
     where
         D: DelayUs,
     {
