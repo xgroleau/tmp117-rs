@@ -18,23 +18,23 @@ impl ErrorType for DummyWait {
 }
 impl Wait for DummyWait {
     async fn wait_for_high(&'_ mut self) -> Result<(), Self::Error> {
-        todo!()
+        unreachable!()
     }
 
     async fn wait_for_low(&'_ mut self) -> Result<(), Self::Error> {
-        todo!()
+        unreachable!()
     }
 
     async fn wait_for_rising_edge(&'_ mut self) -> Result<(), Self::Error> {
-        todo!()
+        unreachable!()
     }
 
     async fn wait_for_falling_edge(&'_ mut self) -> Result<(), Self::Error> {
-        todo!()
+        unreachable!()
     }
 
     async fn wait_for_any_edge(&'_ mut self) -> Result<(), Self::Error> {
-        todo!()
+        unreachable!()
     }
 }
 
@@ -49,15 +49,7 @@ enum AlertPin<P> {
 }
 impl<P> AlertPin<P> {
     /// Borrow a mutable reference to then internal pin without caring for it's state
-    pub fn borrow_mut(&mut self) -> &mut P {
-        match self {
-            AlertPin::Unkown(p) => p,
-            AlertPin::DataReady(p) => p,
-            AlertPin::Alert(p) => p,
-        }
-    }
-
-    pub fn unwrap(self) -> P {
+    fn unwrap(self) -> P {
         match self {
             AlertPin::Unkown(p) => p,
             AlertPin::DataReady(p) => p,
@@ -79,6 +71,13 @@ where
     E: embedded_hal::i2c::Error + Copy,
 {
     /// Create a new tmp117 from a i2c bus
+    /// # Warning
+    /// You should use the `new_with_alert` function instead if possible
+    /// It seems the tmp117 doesn't always set the data ready flag, so you should add a timeout when using `oneshot` wihout an alert pin.
+    /// See [this](https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/909104/tmp117-polling-the-data-ready-flag-seems-to-clear-it-inadvertently-when-using-1-shot-mode)
+    /// and [this](https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1019457/tmp117-data_ready-flag-cleared-incorrectly-if-data-becomes-ready-during-read-of-configuration-register)
+    /// for more information.
+    /// TODO: Pass and use delay instead of polling to fix this
     pub fn new(i2c: T) -> Tmp117<ADDR, T, E, DummyWait> {
         Tmp117::<ADDR, T, E, DummyWait> {
             tmp_ll: Tmp117LL::new(i2c),
@@ -148,7 +147,27 @@ where
         }
     }
 
-    async fn wait_for_data(&mut self) -> Result<(), Error<E>> {
+    async fn set_alert(&mut self) -> Result<(), Error<E>> {
+        // If we have a pin
+        if let Some(p) = &mut self.alert {
+            // If in alert, just use it
+            if let AlertPin::Alert(_) = p {
+            } else {
+                // If not, set it to alert
+                self.tmp_ll
+                    .edit(|r: &mut Configuration| {
+                        r.set_dr_alert(AlertPinSelect::Alert);
+                        r.set_polarity(Polarity::ActiveLow);
+                    })
+                    .await
+                    .map_err(Error::Bus)?;
+            }
+            self.alert = self.alert.take().map(|v| AlertPin::Alert(v.unwrap()));
+        }
+        Ok(())
+    }
+
+    async fn set_data_ready(&mut self) -> Result<(), Error<E>> {
         // If we have a pin
         if let Some(p) = &mut self.alert {
             // If in data ready, just use it
@@ -163,12 +182,16 @@ where
                     .await
                     .map_err(Error::Bus)?;
             }
-            // Wait for it to go high
-            p.borrow_mut()
-                .wait_for_low()
-                .await
-                .map_err(|_| Error::AlertPin)?;
             self.alert = self.alert.take().map(|v| AlertPin::DataReady(v.unwrap()));
+        }
+        Ok(())
+    }
+
+    async fn wait_for_data(&mut self) -> Result<(), Error<E>> {
+        // If we have a pin
+        if let Some(AlertPin::DataReady(p)) = &mut self.alert {
+            // Wait for it to go low
+            p.wait_for_low().await.map_err(|_| Error::AlertPin)?;
 
             // Clear flag in register
             let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
@@ -186,22 +209,8 @@ where
     }
 
     async fn wait_for_alert(&mut self) -> Result<Alert, Error<E>> {
-        if let Some(p) = &mut self.alert {
-            if let AlertPin::Alert(_) = p {
-            } else {
-                self.tmp_ll
-                    .edit(|r: &mut Configuration| {
-                        r.set_dr_alert(AlertPinSelect::Alert);
-                        r.set_polarity(Polarity::ActiveLow);
-                    })
-                    .await
-                    .map_err(Error::Bus)?;
-            }
-            p.borrow_mut()
-                .wait_for_low()
-                .await
-                .map_err(|_| Error::AlertPin)?;
-            self.alert = self.alert.take().map(|v| AlertPin::Alert(v.unwrap()));
+        if let Some(AlertPin::Alert(p)) = &mut self.alert {
+            p.wait_for_low().await.map_err(|_| Error::AlertPin)?;
             self.check_alert().await
         } else {
             loop {
@@ -219,6 +228,7 @@ where
         &mut self,
         config: ContinuousConfig,
     ) -> Result<ContinuousHandler<ADDR, T, E, P>, Error<E>> {
+        self.set_data_ready().await?;
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
             self.tmp_ll.write(high).await.map_err(Error::Bus)?;
@@ -235,7 +245,6 @@ where
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Continuous);
-                r.set_polarity(Polarity::ActiveLow);
                 r.set_average(config.average);
                 r.set_conversion(config.conversion);
             })
@@ -245,10 +254,10 @@ where
     }
 
     async fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
+        self.set_data_ready().await?;
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::OneShot);
-                r.set_polarity(Polarity::ActiveLow);
                 r.set_average(average);
             })
             .await
@@ -317,6 +326,7 @@ where
         self.wait_for_data().await?;
 
         let res = self.read_temp_raw().await?;
+        self.set_shutdown().await?;
         Ok(res)
     }
 
@@ -368,6 +378,7 @@ where
     /// Wait for the data to be ready and read the temperature in celsius
     pub async fn wait_temp(&mut self) -> Result<f32, Error<E>> {
         let tmp117 = unsafe { &mut *self.tmp117 };
+        tmp117.set_data_ready().await?;
         tmp117.wait_for_data().await?;
         tmp117.read_temp_raw().await
     }
@@ -381,6 +392,7 @@ where
     /// Wait for an alert to come and return it's value
     pub async fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
         let tmp117 = unsafe { &mut *self.tmp117 };
+        tmp117.set_alert().await?;
         tmp117.wait_for_alert().await
     }
 }
