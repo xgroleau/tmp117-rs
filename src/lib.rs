@@ -249,7 +249,7 @@ where
                 r.set_reset(true);
             })
             .map_err(Error::Bus)?;
-        delay.delay_ms(2).map_err(|_| Error::Delay)?;
+        delay.delay_ms(2);
         self.set_shutdown()
     }
 

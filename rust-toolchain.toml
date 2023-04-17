@@ -2,6 +2,6 @@
 # https://rust-lang.github.io/rustup-components-history
 # x86 is to build the doc and clippy
 [toolchain]
-channel = "nightly-2022-11-22"
+channel = "nightly-2023-04-11"
 components = [ "clippy", "llvm-tools-preview", "rustfmt" ]
 targets = [ "thumbv7em-none-eabihf", "x86_64-unknown-linux-gnu" ]

@@ -1,6 +1,6 @@
 //! Async drivers of the tmp117
 
-use core::future::Future;
+use core::{convert::Infallible, future::Future};
 
 use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
@@ -14,7 +14,7 @@ pub mod tmp117_ll;
 /// Dummy type for wait pin, should never be
 pub struct DummyWait(());
 impl ErrorType for DummyWait {
-    type Error = ();
+    type Error = Infallible;
 }
 impl Wait for DummyWait {
     async fn wait_for_high(&'_ mut self) -> Result<(), Self::Error> {
@@ -284,7 +284,7 @@ where
             })
             .await
             .map_err(Error::Bus)?;
-        delay.delay_ms(2).await.map_err(|_| Error::Delay)?;
+        delay.delay_ms(2).await;
         self.set_shutdown().await
     }
 
