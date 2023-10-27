@@ -1,7 +1,9 @@
 //! The definitions of drivers of the TMP117
 #![allow(clippy::identity_op)]
+#![allow(missing_docs)]
+
+use bilge::prelude::*;
 use device_register::{RERegister, RORegister, RWRegister};
-use modular_bitfield::prelude::*;
 
 /// The address of the register
 pub struct Address(pub u8);
@@ -9,17 +11,16 @@ pub struct Address(pub u8);
 /// Temperature register. The value is in 1/7.8125 m°C.
 /// Following a reset, the temperature register reads –256 °C until the first conversion,
 /// including averaging, is complete. Is in two complements
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RORegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x00)")]
-pub struct Temperature(pub B16);
+pub struct Temperature(pub u16);
 
 /// Represent the dataready or alert pin select
+#[bitsize(1)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 1]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
 pub enum AlertPinSelect {
     ///Alert pin reflects the status of the alert flag
     Alert = 0,
@@ -29,9 +30,9 @@ pub enum AlertPinSelect {
 }
 
 /// Possible polarities
+#[bitsize(1)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 1]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
 pub enum Polarity {
     ///Polarity set to active low
     ActiveLow = 0,
@@ -41,9 +42,9 @@ pub enum Polarity {
 }
 
 /// Possible mode selection
+#[bitsize(1)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 1]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
 pub enum TriggerMode {
     /// Alert mode
     Alert = 0,
@@ -56,9 +57,9 @@ pub enum TriggerMode {
 /// conversion results that are collected and averaged before
 /// updating the temperature register. The average is an
 /// accumulated average and not a running average.
+#[bitsize(2)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 2]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
 pub enum Average {
     /// No averaging
     NoAverage = 0,
@@ -90,9 +91,9 @@ impl Default for Average {
 /// | 101       | 4s            | 4 is          | 4s            | 4s            |
 /// | 110       | 8 s           | 8 S           | 8s            | 8 s           |
 /// | 111       | 16 S          | 16 S          | 16 S          | 16 S          |
+#[bitsize(3)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 3]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
 pub enum Conversion {
     /// 15.5ms cycle time without average.
     Ms15_5 = 0,
@@ -125,9 +126,9 @@ impl Default for Conversion {
 }
 
 /// Conversion mode
+#[bitsize(2)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, BitfieldSpecifier)]
-#[bits = 2]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, TryFromBits)]
 pub enum ConversionMode {
     /// Continuous conversion mode
     Continuous = 0b0,
@@ -140,14 +141,12 @@ pub enum ConversionMode {
 }
 
 /// Configuration register of the tpm117
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RERegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RERegister, TryFromBits)]
 #[register(ty = "Address", addr = "Address(0x01)")]
 pub struct Configuration {
-    #[skip]
-    __: B1,
+    reserved: u1,
 
     /// Software reset. When enabled, cause a reset with a duration of 2ms. The bit will always read back 0
     pub reset: bool,
@@ -171,7 +170,6 @@ pub struct Configuration {
     pub mode: ConversionMode,
 
     /// EEPROM busy flag, either caused by programming or power-up
-    #[skip(setters)]
     pub eeprom_busy: bool,
 
     /// Data ready flag.
@@ -181,7 +179,6 @@ pub struct Configuration {
     /// bit is set at the end of the conversion when the temperature
     /// register is updated. Data ready can be monitored on the ALERT
     /// pin by setting bit 2 of the configuration register.
-    #[skip(setters)]
     pub data_ready: bool,
 
     /// Alert mode:
@@ -189,7 +186,6 @@ pub struct Configuration {
     ///   Cleared when read.
     /// Thermal mode:
     ///   Always 0 in [Thermal](TriggerMode::Thermal) mode.
-    #[skip(setters)]
     pub low_alert: bool,
 
     /// Alert mode:
@@ -198,7 +194,6 @@ pub struct Configuration {
     /// Thermal mode:
     ///   Set when the conversion result is higher than the therm limit
     ///   Cleared when the conversion result is lower than the hysteresis
-    #[skip(setters)]
     pub high_alert: bool,
 }
 
@@ -206,38 +201,33 @@ pub struct Configuration {
 /// One LSB equals 7.8125 m°C. The range of the register is ±256 °C. Negative numbers are represented in binary
 /// two's complement format. Following power-up or a general-call reset, the high-limit register is loaded with the
 /// stored value from the EEPROM. The factory default reset value is 6000h. Is written in two's complement.
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x02)")]
-pub struct HighLimit(pub B16);
+pub struct HighLimit(pub u16);
 
 /// The low limit register is configured as a 16-bit, read/write register that stores the low limit for comparison with the
 /// temperature result. One LSB equals 7.8125 m°C. The range of the register is ±256 °C. Negative numbers
 /// are represented in binary two's complement format. The data format is the same as the temperature register.
 /// Following power-up or reset, the low-limit register is loaded with the stored value from the EEPROM. The factory
 /// default reset value is 8000h.Is written in two's complement.
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x03)")]
-pub struct LowLimit(pub B16);
+pub struct LowLimit(pub u16);
 
 /// The eeprom configuration register
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RERegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RERegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x04)")]
 pub struct EEPROM {
-    #[skip]
-    __: B14,
+    reserved: u14,
 
     /// EEPROM busy flag, either caused by programming or power-up
     ///Mirror the `eeprom_busy` in the [Configuration](Configuration) register
-    #[skip(setters)]
     pub busy: bool,
 
     /// If the eeprom is unlock. If unlocked, any writes to the registers program will be written to the eeprom
@@ -249,51 +239,46 @@ pub struct EEPROM {
 /// locked write data into the register and not to the EEPROM. Writes to this register when the EEPROM is unlocked
 /// causes the corresponding EEPROM location to be programmed.
 /// To support NIST tracebility, do not delete or reprogram the [UEEPROM1](UEEPROM1) register
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x05)")]
-pub struct UEEPROM1(pub B16);
+pub struct UEEPROM1(pub u16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x06)")]
-pub struct UEEPROM2(pub B16);
+pub struct UEEPROM2(pub u16);
 
 /// Same function as register [UEEPROM1](UEEPROM1) minus the ID for NSIT tracability
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x07)")]
-pub struct UEEPROM3(pub B16);
+pub struct UEEPROM3(pub u16);
 
 /// This 16-bit register is to be used as a user-defined temperature offset register during system calibration. The
 /// offset will be added to the temperature result after linearization. It has a same resolution of 7.8125 m°C and
 /// same range of ±256 °C as the temperature result register. The data format is the same as the temperature
 /// register. If the added result is out of boundary, then the temperature result will show as the maximum or
 /// minimum value. Is written in two's complement.
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RWRegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RWRegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x08)")]
-pub struct TemperatureOffset(pub B16);
+pub struct TemperatureOffset(pub u16);
 
 /// Indicates the device ID
-#[bitfield]
-#[repr(u16)]
+#[bitsize(16)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, RORegister)]
+#[derive(Copy, Clone, PartialEq, Eq, DebugBits, RORegister, FromBits)]
 #[register(ty = "Address", addr = "Address(0x0F)")]
 pub struct DeviceID {
     /// Indicates the device ID
-    pub device_id: B12,
+    pub device_id: u12,
 
     /// Indicates the revision number
-    pub revision: B4,
+    pub revision: u4,
 }

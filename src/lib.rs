@@ -53,7 +53,6 @@ use embedded_hal::{
     i2c::{I2c, SevenBitAddress},
 };
 pub use error::Error;
-pub use modular_bitfield::Specifier;
 use register::*;
 use tmp117_ll::Tmp117LL;
 
@@ -133,24 +132,24 @@ where
 
     /// Returns the ID of the device
     pub fn id(&mut self) -> Result<Id, Error<E>> {
-        let id: DeviceID = self.tmp_ll.read().map_err(Error::Bus)?;
+        let id: DeviceID = self.tmp_ll.read()?;
         Ok(Id {
-            device: id.device_id(),
-            revision: id.revision(),
+            device: id.device_id().into(),
+            revision: id.revision().into(),
         })
     }
 
     fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
-        let mut configuration: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+        let mut configuration: Configuration = self.tmp_ll.read()?;
         while configuration.eeprom_busy() {
-            configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+            configuration = self.tmp_ll.read()?;
         }
 
         Ok(())
     }
 
     fn read_temp_raw(&mut self) -> Result<f32, Error<E>> {
-        let temp: Temperature = self.tmp_ll.read().map_err(Error::Bus)?;
+        let temp: Temperature = self.tmp_ll.read()?;
 
         // Convert to i16 for two complements
         let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
@@ -158,7 +157,7 @@ where
     }
 
     fn check_alert(&mut self) -> Result<Alert, Error<E>> {
-        let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+        let config: Configuration = self.tmp_ll.read()?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)
         } else if config.high_alert() {
@@ -173,7 +172,7 @@ where
     fn wait_for_data(&mut self) -> Result<(), Error<E>> {
         // Loop while the data is not ok
         loop {
-            let config: Configuration = self.tmp_ll.read().map_err(Error::Bus)?;
+            let config: Configuration = self.tmp_ll.read()?;
             if config.data_ready() {
                 break;
             }
@@ -198,45 +197,41 @@ where
     ) -> Result<ContinuousHandler<'_, ADDR, T, E>, Error<E>> {
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(high).map_err(Error::Bus)?;
+            self.tmp_ll.write(high)?;
         }
         if let Some(val) = config.low {
             let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(low).map_err(Error::Bus)?;
+            self.tmp_ll.write(low)?;
         }
         if let Some(val) = config.offset {
             let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(off).map_err(Error::Bus)?;
+            self.tmp_ll.write(off)?;
         }
 
-        self.tmp_ll
-            .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::Continuous);
-                r.set_polarity(Polarity::ActiveLow);
-                r.set_average(config.average);
-                r.set_conversion(config.conversion);
-            })
-            .map_err(Error::Bus)?;
+        self.tmp_ll.edit(|r: &mut Configuration| {
+            r.set_mode(ConversionMode::Continuous);
+            r.set_polarity(Polarity::ActiveLow);
+            r.set_average(config.average);
+            r.set_conversion(config.conversion);
+        })?;
 
         Ok(ContinuousHandler { tmp117: self })
     }
 
     fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
-        self.tmp_ll
-            .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::OneShot);
-                r.set_polarity(Polarity::ActiveLow);
-                r.set_average(average);
-            })
-            .map_err(Error::Bus)
+        let val = self.tmp_ll.edit(|r: &mut Configuration| {
+            r.set_mode(ConversionMode::OneShot);
+            r.set_polarity(Polarity::ActiveLow);
+            r.set_average(average);
+        })?;
+        Ok(val)
     }
 
     fn set_shutdown(&mut self) -> Result<(), Error<E>> {
-        self.tmp_ll
-            .edit(|r: &mut Configuration| {
-                r.set_mode(ConversionMode::Shutdown);
-            })
-            .map_err(Error::Bus)
+        let val = self.tmp_ll.edit(|r: &mut Configuration| {
+            r.set_mode(ConversionMode::Shutdown);
+        })?;
+        Ok(val)
     }
 
     /// Resets the device and put it in shutdown
@@ -244,40 +239,33 @@ where
     where
         D: DelayUs,
     {
-        self.tmp_ll
-            .edit(|r: &mut Configuration| {
-                r.set_reset(true);
-            })
-            .map_err(Error::Bus)?;
+        self.tmp_ll.edit(|r: &mut Configuration| {
+            r.set_reset(true);
+        })?;
         delay.delay_ms(2);
-        self.set_shutdown()
+        self.set_shutdown()?;
+        Ok(())
     }
 
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
     pub fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error<E>> {
         self.wait_eeprom()?;
-        self.tmp_ll
-            .write(UEEPROM1::from(values[0]))
-            .map_err(Error::Bus)?;
+        self.tmp_ll.write(UEEPROM1::from(values[0]))?;
 
         self.wait_eeprom()?;
-        self.tmp_ll
-            .write(UEEPROM2::from(values[1]))
-            .map_err(Error::Bus)?;
+        self.tmp_ll.write(UEEPROM2::from(values[1]))?;
 
         self.wait_eeprom()?;
-        self.tmp_ll
-            .write(UEEPROM3::from(values[2]))
-            .map_err(Error::Bus)?;
+        self.tmp_ll.write(UEEPROM3::from(values[2]))?;
 
         Ok(())
     }
 
     /// Read the data from the eeprom
     pub fn read_eeprom(&mut self) -> Result<[u16; 3], Error<E>> {
-        let u1: UEEPROM1 = self.tmp_ll.read().map_err(Error::Bus)?;
-        let u2: UEEPROM2 = self.tmp_ll.read().map_err(Error::Bus)?;
-        let u3: UEEPROM3 = self.tmp_ll.read().map_err(Error::Bus)?;
+        let u1: UEEPROM1 = self.tmp_ll.read()?;
+        let u2: UEEPROM2 = self.tmp_ll.read()?;
+        let u3: UEEPROM3 = self.tmp_ll.read()?;
 
         Ok([u1.into(), u2.into(), u3.into()])
     }
@@ -315,27 +303,31 @@ where
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not ready
     pub fn read_temp(&mut self) -> Result<f32, Error<E>> {
-        let config: Configuration = self.tmp117.tmp_ll.read().map_err(Error::Bus)?;
+        let config: Configuration = self.tmp117.tmp_ll.read()?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
         }
 
-        self.tmp117.read_temp_raw()
+        let val = self.tmp117.read_temp_raw()?;
+        Ok(val)
     }
 
     /// Wait for the data to be ready and read the temperature in celsius
     pub fn wait_temp(&mut self) -> Result<f32, Error<E>> {
         self.tmp117.wait_for_data()?;
-        self.tmp117.read_temp_raw()
+        let val = self.tmp117.read_temp_raw()?;
+        Ok(val)
     }
 
     /// Check if an alert was triggered since the last calll
     pub fn get_alert(&mut self) -> Result<Alert, Error<E>> {
-        self.tmp117.check_alert()
+        let val = self.tmp117.check_alert()?;
+        Ok(val)
     }
 
     /// Wait for an alert to come and return it's value
     pub fn wait_alert(&mut self) -> Result<Alert, Error<E>> {
-        self.tmp117.wait_for_alert()
+        let val = self.tmp117.wait_for_alert()?;
+        Ok(val)
     }
 }

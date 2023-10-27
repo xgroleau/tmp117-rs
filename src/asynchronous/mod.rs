@@ -110,24 +110,24 @@ where
 
     /// Returns the ID of the device
     pub async fn id(&mut self) -> Result<Id, Error<E>> {
-        let id: DeviceID = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        let id: DeviceID = self.tmp_ll.read().await?;
         Ok(Id {
-            device: id.device_id(),
-            revision: id.revision(),
+            device: id.device_id().into(),
+            revision: id.revision().into(),
         })
     }
 
     async fn wait_eeprom(&mut self) -> Result<(), Error<E>> {
-        let mut configuration: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        let mut configuration: Configuration = self.tmp_ll.read().await?;
         while configuration.eeprom_busy() {
-            configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+            configuration = self.tmp_ll.read().await?;
         }
 
         Ok(())
     }
 
     async fn read_temp_raw(&mut self) -> Result<f32, Error<E>> {
-        let temp: Temperature = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        let temp: Temperature = self.tmp_ll.read().await?;
 
         // Convert to i16 for two complements
         let val = (u16::from(temp) as i16) as f32 * CELCIUS_CONVERSION;
@@ -135,7 +135,7 @@ where
     }
 
     async fn check_alert(&mut self) -> Result<Alert, Error<E>> {
-        let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        let config: Configuration = self.tmp_ll.read().await?;
         if config.high_alert() && config.low_alert() {
             Ok(Alert::HighLow)
         } else if config.high_alert() {
@@ -160,7 +160,7 @@ where
                         r.set_polarity(Polarity::ActiveLow);
                     })
                     .await
-                    .map_err(Error::Bus)?;
+                    ?;
             }
             self.alert = self.alert.take().map(|v| AlertPin::Alert(v.unwrap()));
         }
@@ -180,7 +180,7 @@ where
                         r.set_polarity(Polarity::ActiveLow);
                     })
                     .await
-                    .map_err(Error::Bus)?;
+                    ?;
             }
             self.alert = self.alert.take().map(|v| AlertPin::DataReady(v.unwrap()));
         }
@@ -194,12 +194,12 @@ where
             p.wait_for_low().await.map_err(|_| Error::AlertPin)?;
 
             // Clear flag in register
-            let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+            let config: Configuration = self.tmp_ll.read().await?;
             assert!(config.data_ready());
         } else {
             // Loop while the alert is not ok
             loop {
-                let config: Configuration = self.tmp_ll.read().await.map_err(Error::Bus)?;
+                let config: Configuration = self.tmp_ll.read().await?;
                 if config.data_ready() {
                     break;
                 }
@@ -231,15 +231,15 @@ where
         self.set_data_ready().await?;
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(high).await.map_err(Error::Bus)?;
+            self.tmp_ll.write(high).await?;
         }
         if let Some(val) = config.low {
             let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(low).await.map_err(Error::Bus)?;
+            self.tmp_ll.write(low).await?;
         }
         if let Some(val) = config.offset {
             let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
-            self.tmp_ll.write(off).await.map_err(Error::Bus)?;
+            self.tmp_ll.write(off).await?;
         }
 
         self.tmp_ll
@@ -249,7 +249,7 @@ where
                 r.set_conversion(config.conversion);
             })
             .await
-            .map_err(Error::Bus)?;
+            ?;
         Ok(ContinuousHandler { tmp117: self })
     }
 
@@ -260,8 +260,8 @@ where
                 r.set_mode(ConversionMode::OneShot);
                 r.set_average(average);
             })
-            .await
-            .map_err(Error::Bus)
+            .await?;
+        Ok(())
     }
 
     async fn set_shutdown(&mut self) -> Result<(), Error<E>> {
@@ -269,8 +269,8 @@ where
             .edit(|r: &mut Configuration| {
                 r.set_mode(ConversionMode::Shutdown);
             })
-            .await
-            .map_err(Error::Bus)
+            .await?;
+        Ok(())
     }
 
     /// Resets the device and put it in shutdown
@@ -283,7 +283,7 @@ where
                 r.set_reset(true);
             })
             .await
-            .map_err(Error::Bus)?;
+            ?;
         delay.delay_ms(2).await;
         self.set_shutdown().await
     }
@@ -294,28 +294,28 @@ where
         self.tmp_ll
             .write(UEEPROM1::from(values[0]))
             .await
-            .map_err(Error::Bus)?;
+            ?;
 
         self.wait_eeprom().await?;
         self.tmp_ll
             .write(UEEPROM2::from(values[1]))
             .await
-            .map_err(Error::Bus)?;
+            ?;
 
         self.wait_eeprom().await?;
         self.tmp_ll
             .write(UEEPROM3::from(values[2]))
             .await
-            .map_err(Error::Bus)?;
+            ?;
 
         Ok(())
     }
 
     /// Read the data from the eeprom
     pub async fn read_eeprom(&mut self) -> Result<[u16; 3], Error<E>> {
-        let u1: UEEPROM1 = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        let u2: UEEPROM2 = self.tmp_ll.read().await.map_err(Error::Bus)?;
-        let u3: UEEPROM3 = self.tmp_ll.read().await.map_err(Error::Bus)?;
+        let u1: UEEPROM1 = self.tmp_ll.read().await?;
+        let u2: UEEPROM2 = self.tmp_ll.read().await?;
+        let u3: UEEPROM3 = self.tmp_ll.read().await?;
 
         Ok([u1.into(), u2.into(), u3.into()])
     }
@@ -367,7 +367,7 @@ where
     /// Read the temperature in celsius, return an error if the value of the temperature is not valid
     pub async fn read_temp(&mut self) -> Result<f32, Error<E>> {
         let tmp117 = unsafe { &mut *self.tmp117 };
-        let config: Configuration = tmp117.tmp_ll.read().await.map_err(Error::Bus)?;
+        let config: Configuration = tmp117.tmp_ll.read().await?;
         if !config.data_ready() {
             return Err(Error::DataNotReady);
         }
