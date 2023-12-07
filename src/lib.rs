@@ -49,7 +49,7 @@
 
 use device_register::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{
-    delay::DelayUs,
+    delay::DelayNs,
     i2c::{I2c, SevenBitAddress},
 };
 pub use error::Error;
@@ -237,7 +237,7 @@ where
     /// Resets the device and put it in shutdown
     pub fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<E>>
     where
-        D: DelayUs,
+        D: DelayNs,
     {
         self.tmp_ll.edit(|r: &mut Configuration| {
             r.set_reset(true);

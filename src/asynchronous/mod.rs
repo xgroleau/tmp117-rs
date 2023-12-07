@@ -4,7 +4,7 @@ use core::{convert::Infallible, future::Future};
 
 use device_register_async::{EditRegister, ReadRegister, WriteRegister};
 use embedded_hal::{digital::ErrorType, i2c::SevenBitAddress};
-use embedded_hal_async::{delay::DelayUs, digital::Wait, i2c::I2c};
+use embedded_hal_async::{delay::DelayNs, digital::Wait, i2c::I2c};
 
 use crate::{register::*, Alert, ContinuousConfig, Error, Id, CELCIUS_CONVERSION};
 
@@ -276,7 +276,7 @@ where
     /// Resets the device and put it in shutdown
     pub async fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<E>>
     where
-        D: DelayUs,
+        D: DelayNs,
     {
         self.tmp_ll
             .edit(|r: &mut Configuration| {

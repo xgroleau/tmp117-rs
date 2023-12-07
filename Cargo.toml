@@ -21,8 +21,8 @@ exclude = [
 [dependencies]
 defmt = { version = "0.3", optional = true}
 
-embedded-hal = { version = "1.0.0-rc.1" }
-embedded-hal-async = { version = "1.0.0-rc.1" }
+embedded-hal = { version = "1.0.0-rc.2" }
+embedded-hal-async = { version = "1.0.0-rc.2" }
 
 bilge = "0.2"
 device-register =  "0.3.1"
@@ -33,9 +33,9 @@ panic-probe = { version = "0.3.0", features = ["print-defmt"] }
 cortex-m = { version = "0.7.6", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7.1"
 
-embassy-executor = { version = "0.3", git = "https://github.com/embassy-rs/embassy",  features = ["defmt", "nightly", "integrated-timers"] }
-embassy-nrf = { version = "0.1", git = "https://github.com/embassy-rs/embassy", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote", "nightly", "unstable-traits"] }
-embassy-time = { version = "0.1", git = "https://github.com/embassy-rs/embassy",features = ["defmt", "unstable-traits", "nightly"] }
+embassy-executor = { version = "0.4.0", git = "https://github.com/embassy-rs/embassy",  features = ["defmt", "integrated-timers"] }
+embassy-nrf = { version = "0.1.0", git = "https://github.com/embassy-rs/embassy", features = ["defmt", "nrf52840", "time-driver-rtc1", "gpiote"] }
+embassy-time = { version = "0.2.0", git = "https://github.com/embassy-rs/embassy",features = ["defmt"] }
 
 defmt = "0.3"
 defmt-rtt = "0.3"
