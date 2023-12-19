@@ -41,10 +41,11 @@ where
     async fn read_register(&mut self) -> Result<R, Self::Error> {
         let mut buff = [0; 2];
         self.i2c
-            .write_read(ADDR, &[R::ADDRESS.0], &mut buff).await
+            .write_read(ADDR, &[R::ADDRESS.0], &mut buff)
+            .await
             .map_err(ErrorLL::Bus)?;
         let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
-         R::try_from(val).map_err(|_| ErrorLL::InvalidData)
+        R::try_from(val).map_err(|_| ErrorLL::InvalidData)
     }
 
     async fn write_register(&mut self, register: &R) -> Result<(), Self::Error> {

@@ -159,8 +159,7 @@ where
                         r.set_dr_alert(AlertPinSelect::Alert);
                         r.set_polarity(Polarity::ActiveLow);
                     })
-                    .await
-                    ?;
+                    .await?;
             }
             self.alert = self.alert.take().map(|v| AlertPin::Alert(v.unwrap()));
         }
@@ -179,8 +178,7 @@ where
                         r.set_dr_alert(AlertPinSelect::DataReady);
                         r.set_polarity(Polarity::ActiveLow);
                     })
-                    .await
-                    ?;
+                    .await?;
             }
             self.alert = self.alert.take().map(|v| AlertPin::DataReady(v.unwrap()));
         }
@@ -190,12 +188,18 @@ where
     async fn wait_for_data(&mut self) -> Result<(), Error<E>> {
         // If we have a pin
         if let Some(AlertPin::DataReady(p)) = &mut self.alert {
-            // Wait for it to go low
-            p.wait_for_low().await.map_err(|_| Error::AlertPin)?;
+            loop {
+                // Wait for it to go low
+                p.wait_for_low().await.map_err(|_| Error::AlertPin)?;
 
-            // Clear flag in register
-            let config: Configuration = self.tmp_ll.read().await?;
-            assert!(config.data_ready());
+                // Clear flag in register
+                let config: Configuration = self.tmp_ll.read().await?;
+
+                // Validate that the data is ready
+                if config.data_ready() {
+                    break;
+                }
+            }
         } else {
             // Loop while the alert is not ok
             loop {
@@ -248,8 +252,7 @@ where
                 r.set_average(config.average);
                 r.set_conversion(config.conversion);
             })
-            .await
-            ?;
+            .await?;
         Ok(ContinuousHandler { tmp117: self })
     }
 
@@ -282,8 +285,7 @@ where
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
             })
-            .await
-            ?;
+            .await?;
         delay.delay_ms(2).await;
         self.set_shutdown().await
     }
@@ -291,22 +293,13 @@ where
     /// Write data to user eeprom. Note that this is blocking because we wait for write on the eeprom to complete
     pub async fn write_eeprom(&mut self, values: [u16; 3]) -> Result<(), Error<E>> {
         self.wait_eeprom().await?;
-        self.tmp_ll
-            .write(UEEPROM1::from(values[0]))
-            .await
-            ?;
+        self.tmp_ll.write(UEEPROM1::from(values[0])).await?;
 
         self.wait_eeprom().await?;
-        self.tmp_ll
-            .write(UEEPROM2::from(values[1]))
-            .await
-            ?;
+        self.tmp_ll.write(UEEPROM2::from(values[1])).await?;
 
         self.wait_eeprom().await?;
-        self.tmp_ll
-            .write(UEEPROM3::from(values[2]))
-            .await
-            ?;
+        self.tmp_ll.write(UEEPROM3::from(values[2])).await?;
 
         Ok(())
     }
