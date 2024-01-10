@@ -13,8 +13,7 @@
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
 
-        # Since we are cross compiling with arm-gcc-none, we don't want the CC and AR variable to bet  set in our shell
-        rustpkg = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        rustpkg = pkgs.rust-bin.stable."1.75.0".default;
 
       in with pkgs; {
         devShell = mkShell { buildInputs = [ probe-run rustpkg ]; };
