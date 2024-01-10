@@ -9,7 +9,7 @@ homepage= "https://github.com/xgroleau/tmp117-rs"
 description = "Driver for the tmp117 using the embedded-hal"
 documentation = "https://docs.rs/tmp117"
 readme = "README.md"
-keywords = ["driver", "embedded-hal-driver", "no-std", "tmp117", "temperature", "sensor", "driver"]
+keywords = ["driver", "embedded-hal-driver", "no-std", "tmp117", "sensor"]
 categories = ["embedded", "hardware-support", "no-std"]
 rust-version = "1.75"
 
