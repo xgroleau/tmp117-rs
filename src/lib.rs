@@ -174,19 +174,19 @@ where
     }
 
     fn set_oneshot(&mut self, average: Average) -> Result<(), Error<E>> {
-        let val = self.tmp_ll.edit(|r: &mut Configuration| {
+        self.tmp_ll.edit(|r: &mut Configuration| {
             r.set_mode(ConversionMode::OneShot);
             r.set_polarity(Polarity::ActiveLow);
             r.set_average(average);
         })?;
-        Ok(val)
+        Ok(())
     }
 
     fn set_shutdown(&mut self) -> Result<(), Error<E>> {
-        let val = self.tmp_ll.edit(|r: &mut Configuration| {
+        self.tmp_ll.edit(|r: &mut Configuration| {
             r.set_mode(ConversionMode::Shutdown);
         })?;
-        Ok(val)
+        Ok(())
     }
 
     /// Resets the device and put it in shutdown
