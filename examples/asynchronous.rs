@@ -16,7 +16,7 @@ async fn main(_spawner: Spawner) {
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
     let twi = Twim::new(p.TWISPI0, irq, p.P1_10, p.P1_11, Default::default());
 
-    let mut tmp = Tmp117::<0x49, _, _, _>::new(twi);
+    let mut tmp = Tmp117::<_, _, _>::new(twi, 0x49);
 
     // Read and goes to shutdown mode
     info!("Reading temp once");

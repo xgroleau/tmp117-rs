@@ -10,26 +10,28 @@ use crate::error::ErrorLL;
 use crate::register::Address;
 
 /// Async low level driver of the TPM117. Allows to read, write and edit the registers directly via the i2c bus
-pub struct Tmp117LL<const ADDR: u8, T, E> {
+pub struct Tmp117LL<T, E> {
     i2c: T,
+    addr: u8,
     e: PhantomData<E>,
 }
 
-impl<const ADDR: u8, T, E> Tmp117LL<ADDR, T, E>
+impl<T, E> Tmp117LL<T, E>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
 {
     /// Creates a new instace of the Tmp117 from an i2c bus
-    pub fn new(i2c: T) -> Self {
+    pub fn new(i2c: T, addr: u8) -> Self {
         Self {
             i2c,
+            addr,
             e: PhantomData,
         }
     }
 }
 
-impl<const ADDR: u8, T, E, R> RegisterInterface<R, Address> for Tmp117LL<ADDR, T, E>
+impl<T, E, R> RegisterInterface<R, Address> for Tmp117LL<T, E>
 where
     R: Register<Address = Address> + Clone + TryFrom<u16>,
     u16: From<R>,
@@ -41,7 +43,7 @@ where
     async fn read_register(&mut self) -> Result<R, Self::Error> {
         let mut buff = [0; 2];
         self.i2c
-            .write_read(ADDR, &[R::ADDRESS.0], &mut buff)
+            .write_read(self.addr, &[R::ADDRESS.0], &mut buff)
             .await
             .map_err(ErrorLL::Bus)?;
         let val = u16::from_be_bytes(buff[0..2].try_into().unwrap());
@@ -53,7 +55,7 @@ where
         let packet = val.to_be_bytes();
 
         self.i2c
-            .write(ADDR, &[R::ADDRESS.0, packet[0], packet[1]])
+            .write(self.addr, &[R::ADDRESS.0, packet[0], packet[1]])
             .await
             .map_err(ErrorLL::Bus)
     }

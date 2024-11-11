@@ -60,12 +60,12 @@ impl<P> AlertPin<P> {
 
 /// The TMP117 driver. Note that the alert pin is optional, but it is recommended to pass it if possible
 /// If the alert pin is `None`, the driver will poll the config register instead of waiting for the pin.
-pub struct Tmp117<const ADDR: u8, T, E, P> {
-    tmp_ll: Tmp117LL<ADDR, T, E>,
+pub struct Tmp117<T, E, P> {
+    tmp_ll: Tmp117LL<T, E>,
     alert: Option<AlertPin<P>>,
 }
 
-impl<const ADDR: u8, T, E> Tmp117<ADDR, T, E, DummyWait>
+impl<T, E> Tmp117<T, E, DummyWait>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error + Copy,
@@ -78,30 +78,30 @@ where
     /// and [this](https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1019457/tmp117-data_ready-flag-cleared-incorrectly-if-data-becomes-ready-during-read-of-configuration-register)
     /// for more information.
     /// TODO: Pass and use delay instead of polling to fix this
-    pub fn new(i2c: T) -> Tmp117<ADDR, T, E, DummyWait> {
-        Tmp117::<ADDR, T, E, DummyWait> {
-            tmp_ll: Tmp117LL::new(i2c),
+    pub fn new(i2c: T, addr: u8) -> Tmp117<T, E, DummyWait> {
+        Tmp117::<T, E, DummyWait> {
+            tmp_ll: Tmp117LL::new(i2c, addr),
             alert: None,
         }
     }
 }
 
-impl<const ADDR: u8, T, E, P> Tmp117<ADDR, T, E, P>
+impl<T, E, P> Tmp117<T, E, P>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error + Copy,
     P: Wait,
 {
     /// Create a new tmp117 from a i2c bus and alert pin
-    pub fn new_alert(i2c: T, alert: P) -> Self {
+    pub fn new_alert(i2c: T, addr: u8, alert: P) -> Self {
         Self {
-            tmp_ll: Tmp117LL::new(i2c),
+            tmp_ll: Tmp117LL::new(i2c, addr),
             alert: Some(AlertPin::Unkown(alert)),
         }
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<ADDR, T, E>, alert: P) -> Self {
+    pub fn new_from_ll(tmp_ll: Tmp117LL<T, E>, alert: P) -> Self {
         Self {
             tmp_ll,
             alert: Some(AlertPin::Unkown(alert)),
@@ -231,7 +231,7 @@ where
     async fn set_continuous(
         &mut self,
         config: ContinuousConfig,
-    ) -> Result<ContinuousHandler<ADDR, T, E, P>, Error<E>> {
+    ) -> Result<ContinuousHandler<T, E, P>, Error<E>> {
         self.set_data_ready().await?;
         if let Some(val) = config.high {
             let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
@@ -333,7 +333,7 @@ where
         f: F,
     ) -> Result<(), Error<E>>
     where
-        F: FnOnce(ContinuousHandler<ADDR, T, E, P>) -> Fut,
+        F: FnOnce(ContinuousHandler<T, E, P>) -> Fut,
         Fut: Future<Output = Result<(), Error<E>>>,
     {
         let continuous = self.set_continuous(config).await?;
@@ -347,11 +347,11 @@ where
 /// # Safety
 /// Note that it is only safe to use in the [Tmp117::continuous] closure since
 /// it uses a pointer to the tmp117 to circuvent issues with async closure lifetime
-pub struct ContinuousHandler<const ADDR: u8, T, E, P> {
-    tmp117: *mut Tmp117<ADDR, T, E, P>,
+pub struct ContinuousHandler<T, E, P> {
+    tmp117: *mut Tmp117<T, E, P>,
 }
 
-impl<'a, const ADDR: u8, T, E, P> ContinuousHandler<ADDR, T, E, P>
+impl<'a, T, E, P> ContinuousHandler<T, E, P>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error + Copy,

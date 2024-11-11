@@ -10,7 +10,7 @@ The low level api is always available if needed.
 
 ```rust
 // Pass the address of the tmp device
-let tmp = Tmp117::<0x49, _, _, _>::new(spi);
+let tmp = Tmp117::<_, _, _>::new(spi, 0x49);
 let delay = Delay;
 tmp.reset(delay).unwrap();
 
