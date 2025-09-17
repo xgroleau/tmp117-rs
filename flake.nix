@@ -13,9 +13,9 @@
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs { inherit system overlays; };
 
-        rustpkg = pkgs.rust-bin.stable."1.75.0".default;
+        rustpkg = pkgs.rust-bin.stable."1.89.0".default;
 
       in with pkgs; {
-        devShell = mkShell { buildInputs = [ probe-run rustpkg ]; };
+        devShell = mkShell { buildInputs = [ probe-rs rustpkg ]; };
       });
 }
