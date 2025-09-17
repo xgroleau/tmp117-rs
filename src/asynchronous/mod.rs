@@ -68,7 +68,7 @@ pub struct Tmp117<T, E, P> {
 impl<T, E> Tmp117<T, E, DummyWait>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error + Copy,
+    E: embedded_hal::i2c::Error,
 {
     /// Create a new tmp117 from a i2c bus
     /// # Warning
@@ -89,7 +89,7 @@ where
 impl<T, E, P> Tmp117<T, E, P>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error + Copy,
+    E: embedded_hal::i2c::Error,
     P: Wait,
 {
     /// Create a new tmp117 from a i2c bus and alert pin
@@ -354,7 +354,7 @@ pub struct ContinuousHandler<T, E, P> {
 impl<'a, T, E, P> ContinuousHandler<T, E, P>
 where
     T: I2c<SevenBitAddress, Error = E>,
-    E: embedded_hal::i2c::Error + Copy,
+    E: embedded_hal::i2c::Error,
     P: Wait,
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not valid
