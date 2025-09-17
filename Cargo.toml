@@ -1,6 +1,6 @@
 [package]
 name = "tmp117"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 authors = ["xgroleau <xavgroleau@gmail.com>", "phansel <github@paulhansel.com>"]
 repository = "https://github.com/xgroleau/tmp117-rs"
