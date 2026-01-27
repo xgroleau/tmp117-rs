@@ -124,12 +124,34 @@ where
         }
     }
 
-    fn wait_for_data(&mut self) -> Result<(), Error<E>> {
+    fn wait_for_data<D>(&mut self, delay: &mut Option<D>, timeout: Option<usize>) -> Result<(), Error<E>>
+    where
+        D: DelayNs
+    {
+        // How long to wait between polls if delay is provided in ms
+        const POLL_DELAY: usize = 40;
+
+        // Calculate how many loops will result in a timeout
+        let mut timeout_count =
+            timeout.and_then(|tim| if (tim / POLL_DELAY) == 0 {
+                Some(1)
+            } else {
+                Some(tim / POLL_DELAY)
+            });
+
         // Loop while the data is not ok
         loop {
             let config: Configuration = self.tmp_ll.read()?;
             if config.data_ready() {
                 break;
+            }
+            delay.as_mut().and_then(|d| Some(d.delay_ms(POLL_DELAY as u32)));
+            if let Some(mut tim) = timeout_count {
+                tim -= 1;
+                if tim == 0 {
+                    return Err(Error::Timeout)
+                }
+                timeout_count = Some(tim);
             }
         }
         Ok(())
@@ -226,9 +248,13 @@ where
     }
 
     /// Wait for data and read the temperature in celsius and shutdown since it's a oneshot
-    pub fn oneshot(&mut self, average: Average) -> Result<f32, Error<E>> {
+    pub fn oneshot<D>(&mut self, average: Average, delay: &mut D) -> Result<f32, Error<E>>
+    where
+        D: DelayNs
+    {
         self.set_oneshot(average)?;
-        self.wait_for_data()?;
+        delay.delay_ms(100);
+        self.wait_for_data(&mut Some(delay), Some(1000))?;
         let data = self.read_temp_raw()?;
         Ok(data)
     }
@@ -268,8 +294,11 @@ where
     }
 
     /// Wait for the data to be ready and read the temperature in celsius
-    pub fn wait_temp(&mut self) -> Result<f32, Error<E>> {
-        self.tmp117.wait_for_data()?;
+    pub fn wait_temp<D>(&mut self) -> Result<f32, Error<E>>
+    where
+        D: DelayNs
+    {
+        self.tmp117.wait_for_data::<D>(&mut None, None)?;
         let val = self.tmp117.read_temp_raw()?;
         Ok(val)
     }
