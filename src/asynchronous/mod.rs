@@ -185,7 +185,21 @@ where
         Ok(())
     }
 
-    async fn wait_for_data(&mut self) -> Result<(), Error<E>> {
+    async fn wait_for_data<D>(&mut self, delay: &mut Option<D>, timeout: Option<usize>) -> Result<(), Error<E>>
+    where
+        D: DelayNs
+    {
+        // How long to wait between polls if delay is provided in ms
+        const POLL_DELAY: usize = 40;
+
+        // Calculate how many loops will result in a timeout
+        let mut timeout_count =
+            timeout.and_then(|tim| if (tim / POLL_DELAY) == 0 {
+                Some(1)
+            } else {
+                Some(tim / POLL_DELAY)
+            });
+
         // If we have a pin
         if let Some(AlertPin::DataReady(p)) = &mut self.alert {
             loop {
@@ -207,6 +221,16 @@ where
                 if config.data_ready() {
                     break;
                 }
+                if let Some(delay) = delay.as_mut() {
+                    delay.delay_ms(POLL_DELAY as u32).await;
+                }
+            if let Some(mut tim) = timeout_count {
+                tim -= 1;
+                if tim == 0 {
+                    return Err(Error::Timeout)
+                }
+                timeout_count = Some(tim);
+            }
             }
         }
         Ok(())
@@ -314,9 +338,12 @@ where
     }
 
     /// Wait for data and read the temperature in celsius and goes to shutdown since it's a oneshot
-    pub async fn oneshot(&mut self, average: Average) -> Result<f32, Error<E>> {
+    pub async fn oneshot<D>(&mut self, average: Average, delay: &mut D) -> Result<f32, Error<E>>
+    where
+        D: DelayNs
+    {
         self.set_oneshot(average).await?;
-        self.wait_for_data().await?;
+        self.wait_for_data(&mut Some(delay), Some(1000)).await?;
 
         let res = self.read_temp_raw().await?;
         self.set_shutdown().await?;
@@ -369,10 +396,13 @@ where
     }
 
     /// Wait for the data to be ready and read the temperature in celsius
-    pub async fn wait_temp(&mut self) -> Result<f32, Error<E>> {
+    pub async fn wait_temp<D>(&mut self) -> Result<f32, Error<E>>
+    where
+        D: DelayNs
+    {
         let tmp117 = unsafe { &mut *self.tmp117 };
         tmp117.set_data_ready().await?;
-        tmp117.wait_for_data().await?;
+        tmp117.wait_for_data::<D>(&mut None, None).await?;
         tmp117.read_temp_raw().await
     }
 
