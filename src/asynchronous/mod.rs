@@ -60,15 +60,17 @@ impl<P> AlertPin<P> {
 
 /// The TMP117 driver. Note that the alert pin is optional, but it is recommended to pass it if possible
 /// If the alert pin is `None`, the driver will poll the config register instead of waiting for the pin.
-pub struct Tmp117<T, E, P> {
+pub struct Tmp117<T, E, P, D> {
     tmp_ll: Tmp117LL<T, E>,
     alert: Option<AlertPin<P>>,
+    delay: D,
 }
 
-impl<T, E> Tmp117<T, E, DummyWait>
+impl<T, E, D> Tmp117<T, E, DummyWait, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
+    D: DelayNs,
 {
     /// Create a new tmp117 from a i2c bus
     /// # Warning
@@ -77,34 +79,37 @@ where
     /// See [this](https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/909104/tmp117-polling-the-data-ready-flag-seems-to-clear-it-inadvertently-when-using-1-shot-mode)
     /// and [this](https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1019457/tmp117-data_ready-flag-cleared-incorrectly-if-data-becomes-ready-during-read-of-configuration-register)
     /// for more information.
-    /// TODO: Pass and use delay instead of polling to fix this
-    pub fn new(i2c: T, addr: u8) -> Tmp117<T, E, DummyWait> {
-        Tmp117::<T, E, DummyWait> {
+    pub fn new(i2c: T, addr: u8, delay: D) -> Tmp117<T, E, DummyWait, D> {
+        Tmp117::<T, E, DummyWait, D> {
             tmp_ll: Tmp117LL::new(i2c, addr),
             alert: None,
+            delay,
         }
     }
 }
 
-impl<T, E, P> Tmp117<T, E, P>
+impl<T, E, P, D> Tmp117<T, E, P, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
     P: Wait,
+    D: DelayNs,
 {
     /// Create a new tmp117 from a i2c bus and alert pin
-    pub fn new_alert(i2c: T, addr: u8, alert: P) -> Self {
+    pub fn new_alert(i2c: T, addr: u8, alert: P, delay: D) -> Self {
         Self {
             tmp_ll: Tmp117LL::new(i2c, addr),
             alert: Some(AlertPin::Unkown(alert)),
+            delay,
         }
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<T, E>, alert: P) -> Self {
+    pub fn new_from_ll(tmp_ll: Tmp117LL<T, E>, alert: P, delay: D) -> Self {
         Self {
             tmp_ll,
             alert: Some(AlertPin::Unkown(alert)),
+            delay,
         }
     }
 
@@ -200,16 +205,27 @@ where
                     break;
                 }
             }
+            Ok(())
         } else {
-            // Loop while the alert is not ok
-            loop {
+            const POLL_DELAY_MS: u32 = 10;
+
+            let config: Configuration = self.tmp_ll.read().await?;
+            if config.data_ready() {
+                return Ok(());
+            }
+
+            // Timeout after 3x since someitmes it doesn't get ready, see
+            // https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1019457/tmp117-data_ready-flag-cleared-incorrectly-if-data-becomes-ready-during-read-of-configuration-register
+            let retries = 3 * config.average().conversion_time_ms() / POLL_DELAY_MS;
+            for _ in 0..retries {
+                self.delay.delay_ms(POLL_DELAY_MS).await;
                 let config: Configuration = self.tmp_ll.read().await?;
                 if config.data_ready() {
-                    break;
+                    return Ok(());
                 }
             }
+            Err(Error::Timeout)
         }
-        Ok(())
     }
 
     async fn wait_for_alert(&mut self) -> Result<Alert, Error<E>> {
@@ -231,18 +247,18 @@ where
     async fn set_continuous(
         &mut self,
         config: ContinuousConfig,
-    ) -> Result<ContinuousHandler<T, E, P>, Error<E>> {
+    ) -> Result<ContinuousHandler<T, E, P, D>, Error<E>> {
         self.set_data_ready().await?;
         if let Some(val) = config.high {
-            let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            let high: HighLimit = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(high).await?;
         }
         if let Some(val) = config.low {
-            let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            let low: LowLimit = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(low).await?;
         }
         if let Some(val) = config.offset {
-            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
+            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(off).await?;
         }
 
@@ -277,16 +293,13 @@ where
     }
 
     /// Resets the device and put it in shutdown
-    pub async fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<E>>
-    where
-        D: DelayNs,
-    {
+    pub async fn reset(&mut self) -> Result<(), Error<E>> {
         self.tmp_ll
             .edit(|r: &mut Configuration| {
                 r.set_reset(true);
             })
             .await?;
-        delay.delay_ms(2).await;
+        self.delay.delay_ms(2).await;
         self.set_shutdown().await
     }
 
@@ -319,7 +332,6 @@ where
         self.wait_for_data().await?;
 
         let res = self.read_temp_raw().await?;
-        self.set_shutdown().await?;
         Ok(res)
     }
 
@@ -333,12 +345,14 @@ where
         f: F,
     ) -> Result<(), Error<E>>
     where
-        F: FnOnce(ContinuousHandler<T, E, P>) -> Fut,
+        F: FnOnce(ContinuousHandler<T, E, P, D>) -> Fut,
         Fut: Future<Output = Result<(), Error<E>>>,
     {
         let continuous = self.set_continuous(config).await?;
-        f(continuous).await?;
-        self.set_shutdown().await
+        let res = f(continuous).await;
+        // Always shutdown regardless of result
+        let shutdown = self.set_shutdown().await;
+        res.and(shutdown)
     }
 }
 
@@ -347,15 +361,16 @@ where
 /// # Safety
 /// Note that it is only safe to use in the [Tmp117::continuous] closure since
 /// it uses a pointer to the tmp117 to circuvent issues with async closure lifetime
-pub struct ContinuousHandler<T, E, P> {
-    tmp117: *mut Tmp117<T, E, P>,
+pub struct ContinuousHandler<T, E, P, D> {
+    tmp117: *mut Tmp117<T, E, P, D>,
 }
 
-impl<'a, T, E, P> ContinuousHandler<T, E, P>
+impl<'a, T, E, P, D> ContinuousHandler<T, E, P, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
     P: Wait,
+    D: DelayNs,
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not valid
     pub async fn read_temp(&mut self) -> Result<f32, Error<E>> {

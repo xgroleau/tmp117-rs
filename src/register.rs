@@ -80,6 +80,18 @@ impl Default for Average {
     }
 }
 
+impl Average {
+    /// Active conversion time in milliseconds for this averaging setting.
+    pub const fn conversion_time_ms(self) -> u32 {
+        match self {
+            Average::NoAverage => 16,
+            Average::Avg8 => 125,
+            Average::Avg32 => 500,
+            Average::Avg64 => 1000,
+        }
+    }
+}
+
 /// Conversion cycle. It depends on the average selected. The enum represents the values for no average.
 /// | CONV      | AVG = 00      | AVG = 01      | AVG = 10      | AVG = 11      |
 /// |-----------|---------------|---------------|---------------|---------------|

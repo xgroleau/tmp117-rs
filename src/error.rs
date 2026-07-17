@@ -15,6 +15,9 @@ pub enum Error<E> {
 
     /// Received Invalid data
     InvalidData,
+
+    /// Timeout
+    Timeout,
 }
 
 /// Error emitted by the low level TMP117 drivers

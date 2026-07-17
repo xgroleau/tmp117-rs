@@ -9,22 +9,21 @@ The low level api is always available if needed.
 ### Usage
 
 ```rust
-// Pass the address of the tmp device
-let tmp = Tmp117::<_, _, _>::new(spi, 0x49);
-let delay = Delay;
-tmp.reset(delay).unwrap();
+// Pass the i2c bus, the address of the tmp device and a delay
+let mut tmp = Tmp117::new(i2c, 0x49, delay);
+tmp.reset().unwrap();
 
 // Transition to continuous mode and shutdown after the closure
-let mut tmp_cont = tmp.continuous(Default::default(), |t| {
-// Get the value continuously in continuous mode
+tmp.continuous(Default::default(), |mut t| {
+    // Get the value continuously in continuous mode
     for _ in 0..10 {
-        /// Can transparently return error ehere
-        let temp = tmp.wait_temp()?;
+        // Can transparently return the error here
+        let temp = t.wait_temp()?;
         info!("Temperature {}", temp);
-    };
+    }
     Ok(())
-}).unwrap();
-
+})
+.unwrap();
 ```
 
 ### MSRV

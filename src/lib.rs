@@ -64,25 +64,28 @@ pub struct Id {
 
 /// The TMP117 driver. Note that the alert pin is not used in this driver,
 /// see the async implementation if you want the driver to use the alert pin in the drive
-pub struct Tmp117<T, E> {
+pub struct Tmp117<T, E, D> {
     tmp_ll: Tmp117LL<T, E>,
+    delay: D,
 }
 
-impl<T, E> Tmp117<T, E>
+impl<T, E, D> Tmp117<T, E, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
+    D: DelayNs,
 {
     /// Create a new tmp117 from a i2c bus
-    pub fn new(i2c: T, addr: u8) -> Self {
-        Tmp117::<T, E> {
+    pub fn new(i2c: T, addr: u8, delay: D) -> Self {
+        Tmp117::<T, E, D> {
             tmp_ll: Tmp117LL::new(i2c, addr),
+            delay,
         }
     }
 
     /// Create a new tmp117 from a low level tmp117 driver
-    pub fn new_from_ll(tmp_ll: Tmp117LL<T, E>) -> Self {
-        Tmp117::<T, E> { tmp_ll }
+    pub fn new_from_ll(tmp_ll: Tmp117LL<T, E>, delay: D) -> Self {
+        Tmp117::<T, E, D> { tmp_ll, delay }
     }
 
     /// Returns the ID of the device
@@ -125,14 +128,24 @@ where
     }
 
     fn wait_for_data(&mut self) -> Result<(), Error<E>> {
-        // Loop while the data is not ok
-        loop {
+        const POLL_DELAY_MS: u32 = 10;
+
+        let config: Configuration = self.tmp_ll.read()?;
+        if config.data_ready() {
+            return Ok(());
+        }
+
+        // Timeout after 3x since someitmes it doesn't get ready, see
+        // https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1019457/tmp117-data_ready-flag-cleared-incorrectly-if-data-becomes-ready-during-read-of-configuration-register
+        let retries = 3 * config.average().conversion_time_ms() / POLL_DELAY_MS;
+        for _ in 0..retries {
+            self.delay.delay_ms(POLL_DELAY_MS);
             let config: Configuration = self.tmp_ll.read()?;
             if config.data_ready() {
-                break;
+                return Ok(());
             }
         }
-        Ok(())
+        Err(Error::Timeout)
     }
 
     fn wait_for_alert(&mut self) -> Result<Alert, Error<E>> {
@@ -149,17 +162,17 @@ where
     fn set_continuous(
         &mut self,
         config: ContinuousConfig,
-    ) -> Result<ContinuousHandler<'_, T, E>, Error<E>> {
+    ) -> Result<ContinuousHandler<'_, T, E, D>, Error<E>> {
         if let Some(val) = config.high {
-            let high: HighLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            let high: HighLimit = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(high)?;
         }
         if let Some(val) = config.low {
-            let low: LowLimit = ((val / CELCIUS_CONVERSION) as u16).into();
+            let low: LowLimit = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(low)?;
         }
         if let Some(val) = config.offset {
-            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as u16).into();
+            let off: TemperatureOffset = ((val / CELCIUS_CONVERSION) as i16 as u16).into();
             self.tmp_ll.write(off)?;
         }
 
@@ -190,14 +203,11 @@ where
     }
 
     /// Resets the device and put it in shutdown
-    pub fn reset<D>(&mut self, delay: &mut D) -> Result<(), Error<E>>
-    where
-        D: DelayNs,
-    {
+    pub fn reset(&mut self) -> Result<(), Error<E>> {
         self.tmp_ll.edit(|r: &mut Configuration| {
             r.set_reset(true);
         })?;
-        delay.delay_ms(2);
+        self.delay.delay_ms(2);
         self.set_shutdown()?;
         Ok(())
     }
@@ -238,23 +248,26 @@ where
     /// and finally the device is shutdown
     pub fn continuous<F>(&mut self, config: ContinuousConfig, f: F) -> Result<(), Error<E>>
     where
-        F: FnOnce(ContinuousHandler<'_, T, E>) -> Result<(), Error<E>>,
+        F: FnOnce(ContinuousHandler<'_, T, E, D>) -> Result<(), Error<E>>,
     {
         let handler = self.set_continuous(config)?;
-        f(handler)?;
-        self.set_shutdown()
+        let res = f(handler);
+        // Always shutdown regardless of result
+        let shutdown = self.set_shutdown();
+        res.and(shutdown)
     }
 }
 
 /// Handler for the continuous mode
-pub struct ContinuousHandler<'a, T, E> {
-    tmp117: &'a mut Tmp117<T, E>,
+pub struct ContinuousHandler<'a, T, E, D> {
+    tmp117: &'a mut Tmp117<T, E, D>,
 }
 
-impl<'a, T, E> ContinuousHandler<'a, T, E>
+impl<'a, T, E, D> ContinuousHandler<'a, T, E, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
+    D: DelayNs,
 {
     /// Read the temperature in celsius, return an error if the value of the temperature is not ready
     pub fn read_temp(&mut self) -> Result<f32, Error<E>> {
