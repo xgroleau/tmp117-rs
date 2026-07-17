@@ -1,6 +1,6 @@
 [package]
 name = "tmp117"
-version = "2.0.1"
+version = "3.0.0"
 edition = "2021"
 authors = ["xgroleau <xavgroleau@gmail.com>"]
 repository = "https://github.com/xgroleau/tmp117-rs"
@@ -25,11 +25,11 @@ autoexamples = false
 doctest = false
 
 [dependencies]
-defmt = { version = "0.3", optional = true}
+defmt = { version = "1", optional = true}
 
 embedded-hal = { version = "1.0" }
 embedded-hal-async = { version = "1.0" }
 
-bilge = "0.2"
+bilge = "0.3"
 device-register = "0.4"
 device-register-async = "0.4"

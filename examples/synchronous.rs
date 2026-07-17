@@ -5,6 +5,7 @@
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_nrf::{interrupt, twim::Twim};
+use embassy_time::Delay;
 use tmp117::{register::Average, Tmp117};
 use {defmt_rtt as _, embassy_nrf as _, panic_probe as _};
 
@@ -16,7 +17,7 @@ async fn main(_spawner: Spawner) {
     let irq = interrupt::take!(SPIM0_SPIS0_TWIM0_TWIS0_SPI0_TWI0);
     let twi = Twim::new(p.TWISPI0, irq, p.P1_10, p.P1_11, Default::default());
 
-    let mut tmp = Tmp117::<_, _>::new(twi, 0x49);
+    let mut tmp = Tmp117::new(twi, 0x49, Delay);
 
     // Read and goes to shutdown mode
     info!("Reading temp once");
