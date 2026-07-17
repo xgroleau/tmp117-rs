@@ -27,7 +27,7 @@ tmp.continuous(Default::default(), |mut t| {
 ```
 
 ### MSRV
-Currently `1.75` and up is supported, but some previous nightly version may work
+Currently `1.83` and up is supported
 
 ### License
 Licensed under either of

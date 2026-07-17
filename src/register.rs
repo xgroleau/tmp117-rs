@@ -59,9 +59,10 @@ pub enum TriggerMode {
 /// accumulated average and not a running average.
 #[bitsize(2)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, FromBits)]
 pub enum Average {
     /// No averaging
+    #[default]
     NoAverage = 0,
 
     /// 8 averaged conversions
@@ -72,12 +73,6 @@ pub enum Average {
 
     /// 64 averaged conversions
     Avg64 = 3,
-}
-
-impl Default for Average {
-    fn default() -> Self {
-        Self::NoAverage
-    }
 }
 
 impl Average {
@@ -105,9 +100,10 @@ impl Average {
 /// | 111       | 16 S          | 16 S          | 16 S          | 16 S          |
 #[bitsize(3)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-#[derive(Copy, Clone, PartialEq, Eq, Debug, FromBits)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, FromBits)]
 pub enum Conversion {
     /// 15.5ms cycle time without average.
+    #[default]
     Ms15_5 = 0,
 
     /// 125ms cycle time without average.
@@ -130,11 +126,6 @@ pub enum Conversion {
 
     /// 16000ms cycle time without average.
     Ms16000 = 7,
-}
-impl Default for Conversion {
-    fn default() -> Self {
-        Self::Ms15_5
-    }
 }
 
 /// Conversion mode

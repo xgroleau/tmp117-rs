@@ -365,7 +365,7 @@ pub struct ContinuousHandler<T, E, P, D> {
     tmp117: *mut Tmp117<T, E, P, D>,
 }
 
-impl<'a, T, E, P, D> ContinuousHandler<T, E, P, D>
+impl<T, E, P, D> ContinuousHandler<T, E, P, D>
 where
     T: I2c<SevenBitAddress, Error = E>,
     E: embedded_hal::i2c::Error,
